@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fura-Fura • FF-0001</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fura-Fura">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<style>
+  :root { color-scheme: dark; box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after, input, button, select, textarea, ::placeholder { text-transform: uppercase !important; }
+  body { background: #0f172a; color: #f1f5f9; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); background: #0f172a; z-index: 60; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useCallback, memo, useSyncExternalStore } = React;
+const html = htm.bind(React.createElement);
+
+/* ===== STORE (equivale a lib/game-store.ts) ===== */
+const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
+const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
+const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true });
+const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d }; if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
+const rd = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
+const brl = (v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+async function sha256(t) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+let state = null;
+const ls = new Set();
+const notify = () => ls.forEach((l) => l());
+const snap = () => state || (state = parse(rd()));
+function subscribe(cb) {
+  ls.add(cb);
+  const on = (e) => { if (e.key === KEY) { state = parse(e.newValue); notify(); } };
+  window.addEventListener("storage", on);
+  try { Promise.resolve(navigator.storage && navigator.storage.persist && navigator.storage.persist()).catch(() => {}); } catch (e) {}
+  return () => { ls.delete(cb); window.removeEventListener("storage", on); };
+}
+function update(fn) {
+  state = fn(snap());
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  notify();
+}
+const useGame = () => useSyncExternalStore(subscribe, snap);
+const actions = {
+  furar(n) {
+    update((s) => s.holes[n] ? s : { ...s, current: (s.current || 0) + 1, holes: { ...s.holes, [n]: (s.prizes[n] && !s.prizes[n].off) ? { prize: { name: s.prizes[n].name, img: s.prizes[n].img } } : {} } });
+    return !!snap().holes[n]?.prize;
+  },
+  addPrize(n, name, img) {
+    const s = snap();
+    if (!Number.isInteger(n) || n < 1 || n > TOTAL) return "O número deve estar entre 1 e 1000.";
+    if (s.holes[n]) return "Esse número já foi furado.";
+    if (s.prizes[n]) return "Esse número já tem prêmio cadastrado.";
+    if (!name.trim()) return "Informe o nome do prêmio.";
+    update((p) => ({ ...p, prizes: { ...p.prizes, [n]: { name: name.trim(), img: img.trim() } } }));
+    return null;
+  },
+  removePrize(n) { update((s) => { const p = { ...s.prizes }; delete p[n]; return { ...s, prizes: p }; }); },
+  editPrize(oldN, n, name, img) {
+    const s = snap();
+    if (!Number.isInteger(n) || n < 1 || n > TOTAL) return "O número deve estar entre 1 e 1000.";
+    if (!name.trim()) return "Informe o nome do prêmio.";
+    if (n !== oldN) {
+      if (s.holes[oldN]) return "Esse prêmio já foi sorteado: o número não pode mudar.";
+      if (s.holes[n]) return "Esse número já foi furado.";
+      if (s.prizes[n]) return "Esse número já tem prêmio cadastrado.";
+    }
+    update((p) => { const pr = { ...p.prizes }; const off = pr[oldN] && pr[oldN].off; delete pr[oldN]; pr[n] = { name: name.trim(), img: img.trim(), ...(off ? { off: true } : {}) }; return { ...p, prizes: pr }; });
+    return null;
+  },
+  togglePrize(n) { update((s) => ({ ...s, prizes: { ...s.prizes, [n]: { ...s.prizes[n], off: !s.prizes[n].off } } })); },
+  resetCurrent() { update((s) => ({ ...s, current: 0 })); },
+  saveConfig(store, price) { update((s) => ({ ...s, store: store.trim() || s.store, price })); },
+  reset() { update((s) => ({ ...s, holes: {}, current: 0 })); },
+  async checkPass(p) { const s = snap(); return s.passHash ? (await sha256(p)) === s.passHash : p === DEF_PASS; },
+  async changePass(cur, next, conf) {
+    if (!(await actions.checkPass(cur))) return "Senha atual incorreta.";
+    if (next.length < 4) return "A nova senha deve ter pelo menos 4 caracteres.";
+    if (next !== conf) return "A confirmação não é igual à nova senha.";
+    const h = await sha256(next);
+    update((s) => ({ ...s, passHash: h }));
+    return null;
+  },
+};
+
+/* ===== COMPONENTES ===== */
+function Modal({ title, onClose, wide, children }) {
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return html`<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3 backdrop-blur-sm" onClick=${onClose}>
+    <div role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()} className=${"max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-2xl " + (wide ? "max-w-3xl" : "max-w-md")}>${children}</div>
+  </div>`;
+}
+
+function PrizeImage({ src, className = "" }) {
+  const [bad, setBad] = useState(false);
+  if (!src || bad) return html`<span role="img" aria-label="Prêmio" className=${"inline-flex shrink-0 items-center justify-center bg-emerald-200 " + className}>🎁</span>`;
+  return html`<img src=${src} alt="" onError=${() => setBad(true)} className=${"shrink-0 bg-white object-cover " + className} />`;
+}
+
+function fileToData(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onerror = () => rej();
+    r.onload = () => {
+      const im = new Image();
+      im.onerror = () => rej();
+      im.onload = () => {
+        const s = Math.min(1, 320 / Math.max(im.width, im.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+        const x = c.getContext("2d");
+        x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(im, 0, 0, c.width, c.height);
+        res(c.toDataURL("image/jpeg", 0.82));
+      };
+      im.src = r.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+const Cell = memo(function Cell({ n, hole, onPick }) {
+  if (!hole) return html`<button type="button" aria-label=${"Furar número " + n} onClick=${() => onPick(n)} className="aspect-square min-h-11 rounded-lg bg-blue-600 font-mono text-sm sm:text-base lg:text-xs xl:text-sm font-bold text-white transition active:scale-95 lg:rounded-md lg:hover:scale-110 lg:hover:bg-blue-500">${n}</button>`;
+  if (hole.prize) return html`<button type="button" aria-label=${"Número " + n + ": premiado com " + hole.prize.name} onClick=${() => onPick(n)} className="flex aspect-square min-h-11 animate-pulse flex-col items-center justify-center gap-px overflow-hidden rounded-lg lg:rounded-md bg-emerald-400 p-0.5 text-slate-900 shadow-[0_0_14px_rgba(52,211,153,0.8)] ring-2 ring-emerald-200">
+    <span className="font-mono text-[9px] font-bold leading-none">${n}</span>
+    <${PrizeImage} key=${hole.prize.img} src=${hole.prize.img} className="h-5 w-5 sm:h-7 sm:w-7 lg:h-5 lg:w-5 xl:h-6 xl:w-6 rounded-full" />
+    <span className="line-clamp-1 w-full px-px text-center text-[8px] font-bold leading-none">${hole.prize.name}</span>
+  </button>`;
+  return html`<div role="img" aria-label=${"Número " + n + ": perdeu"} className="flex aspect-square min-h-11 items-center justify-center rounded-lg lg:rounded-md bg-slate-700 text-[9px] sm:text-[10px] font-bold text-slate-400">PERDEU</div>`;
+});
+
+const inp = "w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500";
+const btn = "rounded-lg px-4 py-2 text-sm font-bold ";
+const Note = ({ m }) => m ? html`<p className=${"mt-2 text-sm font-semibold " + (m.ok ? "text-emerald-400" : "text-red-400")}>${m.ok ? "✅" : "⚠️"} ${m.t}</p>` : null;
+const H = ({ children }) => html`<h3 className="mb-2 text-sm font-bold text-blue-300">${children}</h3>`;
+
+function AdminPanel({ onClose }) {
+  const g = useGame();
+  const [auth, setAuth] = useState(false);
+  const [pw, setPw] = useState("");
+  const [lerr, setLerr] = useState("");
+  const [store, setStore] = useState(g.store);
+  const [price, setPrice] = useState(String(g.price).replace(".", ","));
+  const [cfg, setCfg] = useState(null);
+  const [cur, setCur] = useState(""), [nw, setNw] = useState(""), [cf, setCf] = useState("");
+  const [pm, setPm] = useState(null);
+  const [pn, setPn] = useState(""), [pname, setPname] = useState(""), [pimg, setPimg] = useState("");
+  const [edN, setEdN] = useState(null);
+  const [prm, setPrm] = useState(null);
+  const [confirm, setConfirm] = useState(false);
+
+  const entrar = async () => { if (await actions.checkPass(pw)) { setAuth(true); setLerr(""); } else setLerr("Senha incorreta"); };
+
+  if (!auth) return html`<${Modal} title="Área do Administrador" onClose=${onClose}>
+    <h2 className="text-lg font-bold">🔒 Área do Administrador</h2>
+    <p className="mb-3 text-sm text-slate-400">Digite a senha para continuar.</p>
+    <input type="password" autoFocus className=${inp} placeholder="Senha" value=${pw} onChange=${(e) => setPw(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && entrar()} />
+    ${lerr && html`<p className="mt-2 text-sm font-semibold text-red-400">⚠️ ${lerr}</p>`}
+    <div className="mt-4 flex gap-2">
+      <button type="button" onClick=${onClose} className=${btn + "flex-1 bg-slate-700 hover:bg-slate-600"}>Cancelar</button>
+      <button type="button" onClick=${entrar} className=${btn + "flex-1 bg-blue-600 hover:bg-blue-500"}>Entrar</button>
+    </div>
+  <//>`;
+
+  const furos = Object.keys(g.holes).length;
+  const lista = Object.keys(g.prizes).map(Number).sort((a, b) => a - b);
+  const salvar = () => {
+    const v = parseFloat(price.replace(",", "."));
+    if (!store.trim()) return setCfg({ ok: false, t: "Informe o nome da loja." });
+    if (!(v >= 0)) return setCfg({ ok: false, t: "Valor do furo inválido." });
+    actions.saveConfig(store, v); setCfg({ ok: true, t: "Configurações salvas." });
+  };
+  const trocar = async () => {
+    const e = await actions.changePass(cur, nw, cf);
+    setPm(e ? { ok: false, t: e } : { ok: true, t: "Senha alterada com sucesso." });
+    if (!e) { setCur(""); setNw(""); setCf(""); }
+  };
+  const editar = (n) => { const p = g.prizes[n]; setEdN(n); setPn(String(n)); setPname(p.name); setPimg(p.img || ""); setPrm(null); };
+  const cancelar = () => { setEdN(null); setPn(""); setPname(""); setPimg(""); setPrm(null); };
+  const cadastrar = () => {
+    const e = edN === null ? actions.addPrize(parseInt(pn, 10), pname, pimg) : actions.editPrize(edN, parseInt(pn, 10), pname, pimg);
+    setPrm(e ? { ok: false, t: e } : { ok: true, t: (edN === null ? "Prêmio cadastrado" : "Prêmio atualizado") + " no número " + pn + "." });
+    if (!e) { setPn(""); setPname(""); setPimg(""); setEdN(null); }
+  };
+
+  return html`<${Modal} title="Painel do Administrador" onClose=${onClose} wide=${true}>
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div>
+        <h2 className="text-lg font-bold">⚙️ Painel do Administrador</h2>
+        <p className="mt-1 inline-block rounded-md bg-amber-400 px-2 py-0.5 font-mono text-sm font-bold text-slate-900">Nº de série: ${SERIAL}</p>
+      </div>
+      <button type="button" onClick=${onClose} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Sair</button>
+    </div>
+
+    <section className="mb-5 rounded-xl border border-amber-500/40 bg-slate-900 p-3">
+      <${H}>Faturamento<//>
+      <p className="text-sm text-slate-300">${furos} furos × ${brl(g.price)} =</p>
+      <p className="text-3xl font-extrabold text-amber-300">${brl(furos * g.price)}</p>
+    </section>
+
+    <section className="mb-5">
+      <${H}>Configurações<//>
+      <div className="grid gap-2 sm:grid-cols-[2fr_1fr_auto]">
+        <input className=${inp} placeholder="Nome da loja" value=${store} onChange=${(e) => setStore(e.target.value)} />
+        <input className=${inp} inputMode="decimal" placeholder="Valor do furo (R$)" value=${price} onChange=${(e) => setPrice(e.target.value)} />
+        <button type="button" onClick=${salvar} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Salvar</button>
+      </div>
+      <${Note} m=${cfg} />
+    </section>
+
+    <section className="mb-5">
+      <${H}>Alterar senha<//>
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        <input type="password" className=${inp} placeholder="Senha atual" value=${cur} onChange=${(e) => setCur(e.target.value)} />
+        <input type="password" className=${inp} placeholder="Nova senha" value=${nw} onChange=${(e) => setNw(e.target.value)} />
+        <input type="password" className=${inp} placeholder="Confirmar nova senha" value=${cf} onChange=${(e) => setCf(e.target.value)} />
+        <button type="button" onClick=${trocar} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Alterar</button>
+      </div>
+      <${Note} m=${pm} />
+    </section>
+
+    <section className="mb-5">
+      <${H}>${edN === null ? "Cadastrar prêmio" : "Editar prêmio " + edN}<//>
+      <div className="grid gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_auto]">
+        <input type="number" min="1" max="1000" className=${inp} placeholder="Nº (1–1000)" value=${pn} onChange=${(e) => setPn(e.target.value)} />
+        <input className=${inp} placeholder="Nome do prêmio" value=${pname} onChange=${(e) => setPname(e.target.value)} />
+        <label className=${inp + " flex cursor-pointer items-center justify-center text-center hover:bg-slate-800"}>📷 ${pimg.startsWith("data:") ? "Foto escolhida ✓" : "Escolher foto do prêmio"}<input type="file" accept="image/*" className="hidden" onChange=${async (e) => { const f = e.target.files[0]; if (f) { try { setPimg(await fileToData(f)); } catch (x) { setPrm({ ok: false, t: "Não foi possível ler essa imagem." }); } } e.target.value = ""; }} /></label>
+        <input className=${inp} placeholder="ou cole o link da imagem" value=${pimg.startsWith("data:") ? "" : pimg} onChange=${(e) => setPimg(e.target.value)} />
+        <div className="flex gap-2"><button type="button" onClick=${cadastrar} className=${btn + "flex-1 bg-emerald-600 hover:bg-emerald-500"}>${edN === null ? "+ Adicionar" : "Salvar"}</button>${edN !== null && html`<button type="button" onClick=${cancelar} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Cancelar</button>`}</div>
+      </div>
+      ${pimg.trim() && html`<div className="mt-2 flex items-center gap-2 text-xs text-slate-400"><${PrizeImage} key=${pimg} src=${pimg.trim()} className="h-16 w-16 rounded-xl text-2xl" /> Prévia da imagem</div>`}
+      <${Note} m=${prm} />
+    </section>
+
+    <section className="mb-5">
+      <${H}>Prêmios cadastrados (${lista.length})<//>
+      <div className="max-h-64 overflow-auto rounded-lg border border-slate-700">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-slate-900 text-xs text-slate-400"><tr><th className="p-2 text-left">Nº</th><th className="p-2 text-left">Foto</th><th className="p-2 text-left">Prêmio</th><th className="p-2 text-left">Status</th><th className="p-2"></th></tr></thead>
+          <tbody>
+            ${lista.length === 0 && html`<tr><td colSpan="5" className="p-4 text-center text-slate-500">Nenhum prêmio cadastrado.</td></tr>`}
+            ${lista.map((n) => html`<tr key=${n} className=${"border-t border-slate-700 " + (g.prizes[n].off ? "opacity-50" : "")}>
+              <td className="p-2 font-mono font-bold">${n}</td>
+              <td className="p-2"><${PrizeImage} key=${g.prizes[n].img} src=${g.prizes[n].img} className="h-8 w-8 rounded-full" /></td>
+              <td className="p-2">${g.prizes[n].name}</td>
+              <td className="p-2">${g.holes[n] ? html`<span className="font-semibold text-emerald-400">Sorteado</span>` : g.prizes[n].off ? html`<span className="font-semibold text-red-300">Desativado</span>` : html`<span className="text-slate-400">Disponível</span>`}</td>
+              <td className="p-2"><div className="flex flex-wrap justify-end gap-1">
+                <button type="button" onClick=${() => editar(n)} className="rounded bg-blue-900/70 px-2 py-1 text-xs hover:bg-blue-700">✏️ Editar</button>
+                <button type="button" onClick=${() => actions.togglePrize(n)} className="rounded bg-slate-600 px-2 py-1 text-xs hover:bg-slate-500">${g.prizes[n].off ? "✅ Ativar" : "⏸ Desativar"}</button>
+                <button type="button" onClick=${() => actions.removePrize(n)} className="rounded bg-red-900/60 px-2 py-1 text-xs hover:bg-red-700">🗑 Excluir</button></div></td>
+            </tr>`)}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section className="border-t border-slate-700 pt-4">
+      ${!confirm
+        ? html`<button type="button" onClick=${() => setConfirm(true)} className=${btn + "bg-red-600 hover:bg-red-500"}>🔄 Reiniciar Jogo</button>`
+        : html`<div className="rounded-lg border border-red-600 bg-red-950/60 p-3">
+            <p className="mb-3 text-sm font-semibold">Tem certeza? Todos os furos serão limpos. Prêmios e configurações são mantidos.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick=${() => setConfirm(false)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Cancelar</button>
+              <button type="button" onClick=${() => { actions.reset(); setConfirm(false); }} className=${btn + "bg-red-600 hover:bg-red-500"}>Sim, reiniciar</button>
+            </div>
+          </div>`}
+    </section>
+  <//>`;
+}
+
+function App() {
+  const g = useGame();
+  const [view, setView] = useState(null);
+  const [list, setList] = useState(false);
+  const [admin, setAdmin] = useState(false);
+  const pick = useCallback((n) => { if (actions.furar(n)) setView(n); }, []);
+  const closeView = useCallback(() => setView(null), []);
+  const closeList = useCallback(() => setList(false), []);
+  const closeAdmin = useCallback(() => setAdmin(false), []);
+  const [detail, setDetail] = useState(null);
+  const closeDetail = useCallback(() => setDetail(null), []);
+
+  const holes = Object.entries(g.holes);
+  const sorteados = holes.filter(([, h]) => h.prize).map(([n, h]) => ({ n: Number(n), prize: h.prize })).sort((a, b) => a.n - b.n);
+  const disp = Object.entries(g.prizes).filter(([n, p]) => !g.holes[n] && !p.off).map(([, p]) => p);
+  const win = view !== null ? g.holes[view]?.prize : null;
+  const stats = [["Furados", "Furados", holes.length, "text-blue-300"], ["Livres", "Números disponíveis", TOTAL - holes.length, "text-slate-100"], ["Sorteados", "Prêmios sorteados", sorteados.length, "text-emerald-300"], ["Prêm. livres", "Prêmios disponíveis", disp.length, "text-amber-300"]];
+
+  const cells = [];
+  for (let n = 1; n <= TOTAL; n++) cells.push(html`<${Cell} key=${n} n=${n} hole=${g.holes[n]} onPick=${pick} />`);
+
+  return html`<div className="min-h-screen bg-slate-900">
+    <header className="border-b border-slate-800 bg-slate-900/95 px-3 py-3 backdrop-blur sm:px-6" style=${{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30 }}>
+      <div className="mx-auto flex max-w-[1400px] items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="break-words text-xl font-extrabold leading-tight sm:text-3xl">🎯 ${g.store}</h1>
+          <p className="text-sm font-semibold text-amber-300 sm:text-base">${brl(g.price)} por furo</p>
+        </div>
+        <button type="button" onClick=${() => setList(true)} className="flex shrink-0 items-center gap-2 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-slate-900 shadow hover:bg-amber-300"><span aria-hidden="true">🎁</span><span>Ver prêmios</span></button>
+        <button type="button" aria-label="Área do Administrador" onClick=${() => setAdmin(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-semibold hover:bg-slate-700">
+          <span aria-hidden="true">⚙️</span><span className="hidden sm:inline">Área do Administrador</span>
+        </button>
+      </div>
+      <div className="mx-auto mt-3 grid max-w-[1400px] grid-cols-4 gap-1.5 sm:gap-2">
+        ${stats.map(([c, l, v, cor]) => html`<div key=${c} className="min-w-0 rounded-xl border border-slate-700 bg-slate-800 px-2 py-1.5 text-center sm:px-3 sm:text-left">
+          <div className="truncate text-[10px] uppercase tracking-wide text-slate-400 sm:text-xs"><span className="sm:hidden">${c}</span><span className="hidden sm:inline">${l}</span></div>
+          <div className=${"text-lg font-extrabold sm:text-2xl " + cor}>${v}</div>
+        </div>`)}
+      </div>
+    <div className="mx-auto mt-2 flex max-w-[1400px] items-center justify-between gap-2 rounded-xl border border-amber-500/50 bg-amber-400/10 px-3 py-1.5">
+        <div className="min-w-0">
+          <div className="truncate text-[10px] uppercase tracking-wide text-amber-200 sm:text-xs">Números jogados agora</div>
+          <div className="text-2xl font-extrabold leading-none text-amber-300 sm:text-3xl">${g.current || 0}</div>
+        </div>
+        <button type="button" onClick=${() => actions.resetCurrent()} className="shrink-0 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-amber-300 sm:text-sm">🔄 Zerar</button>
+      </div>
+    </header>
+
+    <main className="px-2 py-3 sm:px-4">
+      <div className="hidden">
+        
+      </div>
+      <div className="mx-auto w-full max-w-[1400px] rounded-xl border border-slate-800 bg-slate-950 p-2 sm:p-3">
+        <div className="grid grid-cols-6 gap-1.5 min-[400px]:grid-cols-7 sm:grid-cols-10 sm:gap-2 md:grid-cols-12 lg:grid-cols-[repeat(20,minmax(0,1fr))] lg:gap-1 xl:grid-cols-[repeat(25,minmax(0,1fr))]">${cells}</div>
+      </div>
+    </main>
+    <footer className="pb-6 text-center text-xs text-slate-500">Nº de série: ${SERIAL}</footer>
+
+    ${view !== null && win && html`<${Modal} title="Número premiado!" onClose=${closeView}>
+      <div className="text-center">
+        <div className="text-4xl">🎉</div>
+        <h2 className="mt-1 text-2xl font-extrabold text-emerald-400">Número premiado!</h2>
+        <p className="mb-3 font-mono text-slate-300">Número ${view}</p>
+        <${PrizeImage} key=${win.img} src=${win.img} className="mx-auto h-48 w-48 rounded-2xl text-6xl" />
+        <p className="mt-3 text-xl font-bold">${win.name}</p>
+        <button type="button" onClick=${closeView} className="mt-5 w-full rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">Continuar</button>
+      </div>
+    <//>`}
+
+    ${list && html`<${Modal} title="Prêmios" onClose=${closeList} wide=${true}>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold">🎁 Prêmios</h2>
+        <button type="button" onClick=${closeList} className="rounded-lg bg-slate-700 px-3 py-1 text-sm hover:bg-slate-600">Fechar ✕</button>
+      </div>
+      <h3 className="mb-2 text-sm font-bold text-blue-300">Ainda disponíveis (${disp.length})</h3>
+      ${disp.length === 0 && html`<p className="mb-4 text-sm text-slate-400">Nenhum prêmio disponível no momento.</p>`}
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        ${disp.map((p, i) => html`<button type="button" key=${i} onClick=${() => setDetail({ ...p })} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 p-2 text-left hover:border-blue-500">
+          <${PrizeImage} key=${p.img} src=${p.img} className="h-12 w-12 rounded-lg" /><span className="text-sm font-semibold leading-tight">${p.name}</span></button>`)}
+      </div>
+      <h3 className="mb-2 text-sm font-bold text-emerald-300">Já sorteados (${sorteados.length})</h3>
+      ${sorteados.length === 0 && html`<p className="text-sm text-slate-400">Nenhum prêmio sorteado ainda.</p>`}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        ${sorteados.map(({ n, prize }) => html`<button type="button" key=${n} onClick=${() => setDetail({ ...prize, n })} className="flex items-center gap-2 rounded-xl border border-emerald-700 bg-emerald-950/40 p-2 text-left hover:border-emerald-400">
+          <${PrizeImage} key=${prize.img} src=${prize.img} className="h-12 w-12 rounded-lg" />
+          <span className="text-sm font-semibold leading-tight">${prize.name}<span className="block font-mono text-xs text-emerald-300">Nº ${n}</span></span></button>`)}
+      </div>
+    <//>`}
+
+    ${detail && html`<${Modal} title=${detail.name} onClose=${closeDetail}>
+      <div className="text-center">
+        <p className=${"mb-2 text-sm font-bold " + (detail.n ? "text-emerald-300" : "text-blue-300")}>${detail.n ? "Já sorteado · Número " + detail.n : "Ainda disponível"}</p>
+        <${PrizeImage} key=${detail.img} src=${detail.img} className="mx-auto h-48 w-48 rounded-2xl text-6xl" />
+        <p className="mt-3 text-xl font-bold">${detail.name}</p>
+        <button type="button" onClick=${closeDetail} className="mt-5 w-full rounded-xl bg-slate-600 py-3 font-bold hover:bg-slate-500">Fechar</button>
+      </div>
+    <//>`}
+
+    ${admin && html`<${AdminPanel} onClose=${closeAdmin} />`}
+  </div>`;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
+if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {})); }
+</script>
+</body>
+</html>
