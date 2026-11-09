@@ -31,7 +31,7 @@ const { useState, useEffect, useCallback, memo, useSyncExternalStore } = React;
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
+const SERIAL = "FF-0002", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
 const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true });
