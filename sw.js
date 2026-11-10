@@ -1,4 +1,4 @@
-const CACHE = "fura-fura-v4";
+const CACHE = "fura-fura-v5";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -16,6 +16,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
+  if (new URL(req.url).hostname === "api.github.com") return; // lista da pasta: sempre da internet
   const keep = (res) => { if (res.ok || res.type === "opaque") { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {}); } return res; };
   if (req.mode === "navigate" || new URL(req.url).origin === self.location.origin) {
     // página: tenta a internet primeiro (pega atualizações) e usa o cache se estiver sem rede
