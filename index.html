@@ -34,6 +34,8 @@ const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
+// nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
+const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
 const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true });
@@ -72,7 +74,7 @@ const actions = {
     if (s.holes[n]) return "Esse número já foi furado.";
     if (s.prizes[n]) return "Esse número já tem prêmio cadastrado.";
     if (!name.trim()) return "Informe o nome do prêmio.";
-    update((p) => ({ ...p, prizes: { ...p.prizes, [n]: { name: name.trim(), img: img.trim() } } }));
+    update((p) => ({ ...p, prizes: { ...p.prizes, [n]: { name: name.trim(), img: resolveImg(img) } } }));
     return null;
   },
   removePrize(n) { update((s) => { const p = { ...s.prizes }; delete p[n]; return { ...s, prizes: p }; }); },
@@ -85,7 +87,7 @@ const actions = {
       if (s.holes[n]) return "Esse número já foi furado.";
       if (s.prizes[n]) return "Esse número já tem prêmio cadastrado.";
     }
-    update((p) => { const pr = { ...p.prizes }; const off = pr[oldN] && pr[oldN].off; delete pr[oldN]; pr[n] = { name: name.trim(), img: img.trim(), ...(off ? { off: true } : {}) }; return { ...p, prizes: pr }; });
+    update((p) => { const pr = { ...p.prizes }; const off = pr[oldN] && pr[oldN].off; delete pr[oldN]; pr[n] = { name: name.trim(), img: resolveImg(img), ...(off ? { off: true } : {}) }; return { ...p, prizes: pr }; });
     return null;
   },
   togglePrize(n) { update((s) => ({ ...s, prizes: { ...s.prizes, [n]: { ...s.prizes[n], off: !s.prizes[n].off } } })); },
@@ -167,6 +169,25 @@ const btn = "rounded-lg px-4 py-2 text-sm font-bold ";
 const Note = ({ m }) => m ? html`<p className=${"mt-2 text-sm font-semibold " + (m.ok ? "text-emerald-400" : "text-red-400")}>${m.ok ? "✅" : "⚠️"} ${m.t}</p>` : null;
 const H = ({ children }) => html`<h3 className="mb-2 text-sm font-bold text-blue-300">${children}</h3>`;
 
+function Galeria({ onPick, onClose }) {
+  const [lista, setLista] = useState(null);
+  useEffect(() => {
+    fetch("premios/lista.json").then((r) => { if (!r.ok) throw 0; return r.json(); }).then((l) => setLista(Array.isArray(l) ? l : [])).catch(() => setLista([]));
+  }, []);
+  return html`<${Modal} title="Imagens da pasta" onClose=${onClose} wide=${true}>
+    <div className="mb-3 flex items-center justify-between">
+      <h2 className="text-lg font-bold">🖼 Imagens da pasta premios</h2>
+      <button type="button" onClick=${onClose} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Fechar ✕</button>
+    </div>
+    ${lista === null && html`<p className="text-sm text-slate-400">Carregando...</p>`}
+    ${lista && lista.length === 0 && html`<p className="text-sm text-slate-400">Nenhuma imagem encontrada. Crie o arquivo premios/lista.json com os nomes das imagens.</p>`}
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+      ${(lista || []).map((nome) => html`<button type="button" key=${nome} onClick=${() => onPick("premios/" + nome)} className="flex flex-col items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 p-2 hover:border-blue-500">
+        <${PrizeImage} src=${"premios/" + nome} className="h-20 w-20 rounded-lg" /><span className="max-w-full truncate text-[11px]">${nome}</span></button>`)}
+    </div>
+  <//>`;
+}
+
 function AdminPanel({ onClose }) {
   const g = useGame();
   const [auth, setAuth] = useState(false);
@@ -179,6 +200,7 @@ function AdminPanel({ onClose }) {
   const [pm, setPm] = useState(null);
   const [pn, setPn] = useState(""), [pname, setPname] = useState(""), [pimg, setPimg] = useState("");
   const [edN, setEdN] = useState(null);
+  const [gal, setGal] = useState(false);
   const [prm, setPrm] = useState(null);
   const [confirm, setConfirm] = useState(false);
 
@@ -225,6 +247,8 @@ function AdminPanel({ onClose }) {
       <button type="button" onClick=${onClose} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Sair</button>
     </div>
 
+    ${gal && html`<${Galeria} onPick=${(v) => { setPimg(v); setGal(false); }} onClose=${() => setGal(false)} />`}
+
     <section className="mb-5 rounded-xl border border-amber-500/40 bg-slate-900 p-3">
       <${H}>Faturamento<//>
       <p className="text-sm text-slate-300">${furos} furos × ${brl(g.price)} =</p>
@@ -254,14 +278,15 @@ function AdminPanel({ onClose }) {
 
     <section className="mb-5">
       <${H}>${edN === null ? "Cadastrar prêmio" : "Editar prêmio " + edN}<//>
-      <div className="grid gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_auto]">
+      <div className="grid gap-2 sm:grid-cols-[110px_1fr_1fr]">
         <input inputMode="numeric" maxLength="4" className=${inp} placeholder="Nº (1–1000)" value=${pn} onChange=${(e) => setPn(e.target.value)} />
         <input className=${inp} placeholder="Nome do prêmio" value=${pname} onChange=${(e) => setPname(e.target.value)} />
         <label tabIndex="0" onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.querySelector("input").click(); } }} className=${inp + " flex cursor-pointer items-center justify-center text-center hover:bg-slate-800"}>📷 ${pimg.startsWith("data:") ? "Foto escolhida ✓" : "Escolher foto do prêmio"}<input type="file" accept="image/*" className="hidden" onChange=${async (e) => { const f = e.target.files[0]; if (f) { try { setPimg(await fileToData(f)); } catch (x) { setPrm({ ok: false, t: "Não foi possível ler essa imagem." }); } } e.target.value = ""; }} /></label>
-        <input className=${inp} placeholder="ou cole o link da imagem" value=${pimg.startsWith("data:") ? "" : pimg} onChange=${(e) => setPimg(e.target.value)} />
+        <button type="button" onClick=${() => setGal(true)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>🖼 Escolher da pasta</button>
+        <input className=${inp} placeholder="ou digite o nome do arquivo (ex: tv.jpg) ou link" value=${pimg.startsWith("data:") ? "" : pimg} onChange=${(e) => setPimg(e.target.value)} />
         <div className="flex gap-2"><button type="button" onClick=${cadastrar} className=${btn + "flex-1 bg-emerald-600 hover:bg-emerald-500"}>${edN === null ? "+ Adicionar" : "Salvar"}</button>${edN !== null && html`<button type="button" onClick=${cancelar} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Cancelar</button>`}</div>
       </div>
-      ${pimg.trim() && html`<div className="mt-2 flex items-center gap-2 text-xs text-slate-400"><${PrizeImage} key=${pimg} src=${pimg.trim()} className="h-16 w-16 rounded-xl text-2xl" /> Prévia da imagem</div>`}
+      ${pimg.trim() && html`<div className="mt-2 flex items-center gap-2 text-xs text-slate-400"><${PrizeImage} key=${pimg} src=${resolveImg(pimg)} className="h-16 w-16 rounded-xl text-2xl" /> Prévia da imagem</div>`}
       <${Note} m=${prm} />
     </section>
 
