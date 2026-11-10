@@ -171,16 +171,29 @@ const H = ({ children }) => html`<h3 className="mb-2 text-sm font-bold text-blue
 
 function Galeria({ onPick, onClose }) {
   const [lista, setLista] = useState(null);
+  const [erro, setErro] = useState("");
   useEffect(() => {
-    fetch("premios/lista.json").then((r) => { if (!r.ok) throw 0; return r.json(); }).then((l) => setLista(Array.isArray(l) ? l : [])).catch(() => setLista([]));
+    const base = Array.from({ length: 10 }, (_, i) => "premio-" + String(i + 1).padStart(2, "0") + ".png");
+    const ehImg = /\.(png|jpe?g|gif|webp|svg)$/i;
+    const viaJson = () => fetch("premios/lista.json", { cache: "no-store" })
+      .then((r) => { if (!r.ok) throw new Error("lista.json: erro " + r.status); return r.json(); })
+      .then((l) => { if (!Array.isArray(l)) throw new Error("lista.json: formato inválido"); return l; });
+    const h = location.hostname, repo = location.pathname.split("/")[1];
+    // em github.io lê a própria pasta premios; se falhar, usa o lista.json
+    const viaApi = () => fetch("https://api.github.com/repos/" + h.split(".")[0] + "/" + repo + "/contents/premios")
+      .then((r) => { if (!r.ok) throw new Error("pasta premios: erro " + r.status); return r.json(); })
+      .then((l) => l.filter((x) => x.type === "file" && ehImg.test(x.name)).map((x) => x.name));
+    (h.endsWith(".github.io") && repo ? viaApi().catch(() => viaJson()) : viaJson())
+      .then((l) => setLista([...new Set([...base, ...l])])).catch((e) => { setErro(e.message); setLista(base); });
   }, []);
   return html`<${Modal} title="Imagens da pasta" onClose=${onClose} wide=${true}>
     <div className="mb-3 flex items-center justify-between">
       <h2 className="text-lg font-bold">🖼 Imagens da pasta premios</h2>
       <button type="button" onClick=${onClose} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Fechar ✕</button>
     </div>
+    ${erro && html`<p className="mb-3 text-sm font-semibold text-amber-300">⚠️ Não consegui ler a pasta (${erro}). Mostrando só as imagens padrão.</p>`}
     ${lista === null && html`<p className="text-sm text-slate-400">Carregando...</p>`}
-    ${lista && lista.length === 0 && html`<p className="text-sm text-slate-400">Nenhuma imagem encontrada. Crie o arquivo premios/lista.json com os nomes das imagens.</p>`}
+    ${lista && lista.length === 0 && html`<p className="text-sm text-slate-400">Nenhuma imagem encontrada${erro ? " (" + erro + ")" : ""}. Confira se a pasta premios está na raiz do repositório, ao lado do index.html, e tem imagens. Ou crie premios/lista.json com os nomes.</p>`}
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
       ${(lista || []).map((nome) => html`<button type="button" key=${nome} onClick=${() => onPick("premios/" + nome)} className="flex flex-col items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 p-2 hover:border-blue-500">
         <${PrizeImage} src=${"premios/" + nome} className="h-20 w-20 rounded-lg" /><span className="max-w-full truncate text-[11px]">${nome}</span></button>`)}
