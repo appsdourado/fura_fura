@@ -22,6 +22,10 @@
   *, *::before, *::after, input, button, select, textarea, ::placeholder { text-transform: uppercase !important; }
   button:focus, input:focus, textarea:focus, [tabindex]:focus { outline: 4px solid #fbbf24 !important; outline-offset: 2px; }
   .aspect-square:focus { transform: scale(1.3); position: relative; z-index: 5; }
+  @keyframes ffIn { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+  .ff-in { animation: ffIn .7s ease-out; }
+  @keyframes ffBar { from { width: 0; } to { width: 100%; } }
+  .ff-bar { animation: ffBar 10s linear forwards; }
   body { background: #0f172a; color: #f1f5f9; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); background: #0f172a; z-index: 60; }
 </style>
@@ -107,21 +111,21 @@ const actions = {
 
 /* ===== COMPONENTES ===== */
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]):not([type=file]), select, textarea, [tabindex="0"]';
-function Modal({ title, onClose, wide, children }) {
+function Modal({ title, onClose, wide, lock, children }) {
   const ref = useRef(null);
   useEffect(() => { const prev = document.activeElement; return () => { if (prev && prev.focus && document.contains(prev)) prev.focus({ preventScroll: true }); }; }, []);
   useEffect(() => { const r = ref.current; if (r && !r.contains(document.activeElement)) { const f = r.querySelector(FOCUSABLE); if (f) f.focus(); } });
   useEffect(() => {
     const k = (e) => {
-      if ((e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack" || e.keyCode === 4) && ref.current) {
+      if (!lock && (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack" || e.keyCode === 4) && ref.current) {
         const d = document.querySelectorAll('[role="dialog"]');
         if (d[d.length - 1] === ref.current) { e.preventDefault(); onClose(); }
       }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
-  return html`<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3 backdrop-blur-sm" onClick=${onClose}>
+  }, [onClose, lock]);
+  return html`<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3 backdrop-blur-sm" onClick=${lock ? undefined : onClose}>
     <div ref=${ref} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()} className=${"max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-2xl " + (wide ? "max-w-3xl" : "max-w-md")}>${children}</div>
   </div>`;
 }
@@ -390,15 +394,38 @@ function App() {
   const [admin, setAdmin] = useState(false);
   const pick = useCallback((n) => { if (actions.furar(n)) setView(n); }, []);
   const closeView = useCallback(() => setView(null), []);
-  const closeList = useCallback(() => setList(false), []);
+  const closeList = useCallback(() => { setList(false); setLoop(false); }, []);
   const closeAdmin = useCallback(() => setAdmin(false), []);
   const [detail, setDetail] = useState(null);
+  const [loop, setLoop] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [idx, setIdx] = useState(0);
+  const closeLoop = useCallback(() => setLoop(false), []);
   const closeDetail = useCallback(() => setDetail(null), []);
 
   const holes = Object.entries(g.holes);
   const sorteados = holes.filter(([, h]) => h.prize).map(([n, h]) => ({ n: Number(n), prize: h.prize })).sort((a, b) => a.n - b.n);
   const disp = Object.entries(g.prizes).filter(([n, p]) => !g.holes[n] && !p.off).map(([, p]) => p);
   const win = view !== null ? g.holes[view]?.prize : null;
+  const cur = disp.length ? disp[idx % disp.length] : null;
+
+  // lista aberta e parada por 30s (sem detalhe aberto): inicia o loop dos prêmios em jogo
+  useEffect(() => {
+    if (!list || loop || detail || disp.length === 0) return;
+    const t = setTimeout(() => { setIdx(0); setLoop(true); }, 30000);
+    const bump = () => setTick((x) => x + 1);
+    const evs = ["pointerdown", "keydown", "touchstart", "wheel"];
+    evs.forEach((ev) => window.addEventListener(ev, bump, { passive: true }));
+    return () => { clearTimeout(t); evs.forEach((ev) => window.removeEventListener(ev, bump)); };
+  }, [list, loop, detail, tick, disp.length]);
+
+  // loop: cada prêmio fica 10s na tela
+  useEffect(() => {
+    if (!loop) return;
+    if (disp.length === 0) { setLoop(false); return; }
+    const t = setTimeout(() => setIdx((i) => (i + 1) % disp.length), 10000);
+    return () => clearTimeout(t);
+  }, [loop, idx, disp.length]);
   const stats = [["Furados", "Furados", holes.length, "text-blue-300"], ["Livres", "Números disponíveis", TOTAL - holes.length, "text-slate-100"], ["Sorteados", "Prêmios sorteados", sorteados.length, "text-emerald-300"], ["Prêm. livres", "Prêmios disponíveis", disp.length, "text-amber-300"]];
 
   const cells = [];
@@ -452,7 +479,7 @@ function App() {
       </div>
     <//>`}
 
-    ${list && html`<${Modal} title="Prêmios" onClose=${closeList} wide=${true}>
+    ${list && html`<${Modal} title="Prêmios" onClose=${closeList} wide=${true} lock=${true}>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-bold">🎁 Prêmios</h2>
         <button type="button" onClick=${closeList} className="rounded-lg bg-slate-700 px-3 py-1 text-sm hover:bg-slate-600">Fechar ✕</button>
@@ -469,6 +496,21 @@ function App() {
         ${sorteados.map(({ n, prize }) => html`<button type="button" key=${n} onClick=${() => setDetail({ ...prize, n })} className="flex items-center gap-2 rounded-xl border border-emerald-700 bg-emerald-950/40 p-2 text-left hover:border-emerald-400">
           <${PrizeImage} key=${prize.img} src=${prize.img} className="h-12 w-12 rounded-lg" />
           <span className="text-sm font-semibold leading-tight">${prize.name}<span className="block font-mono text-xs text-emerald-300">Nº ${n}</span></span></button>`)}
+      </div>
+    <//>`}
+
+    ${list && loop && cur && html`<${Modal} title="Prêmios em jogo" onClose=${closeLoop} wide=${true} lock=${true}>
+      <div className="text-center">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-xl font-extrabold text-amber-300 sm:text-3xl">🎁 Prêmios em jogo</h2>
+          <button type="button" onClick=${closeLoop} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">Fechar ✕</button>
+        </div>
+        <div key=${idx} className="ff-in">
+          <${PrizeImage} key=${cur.img} src=${cur.img} className="mx-auto h-[38vh] w-[38vh] rounded-3xl text-8xl" />
+          <p className="mt-3 text-3xl font-extrabold sm:text-5xl">${cur.name}</p>
+        </div>
+        <p className="mt-2 text-sm text-slate-400">Prêmio ${idx % disp.length + 1} de ${disp.length}</p>
+        <div className="mx-auto mt-3 h-2 w-full max-w-md overflow-hidden rounded bg-slate-700"><div key=${idx} className="ff-bar h-full bg-amber-400"></div></div>
       </div>
     <//>`}
 
