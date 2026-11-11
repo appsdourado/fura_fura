@@ -1,4 +1,4 @@
-const CACHE = "fura-fura-v5";
+const CACHE = "fura-fura-v6";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -20,7 +20,7 @@ self.addEventListener("fetch", (e) => {
   const keep = (res) => { if (res.ok || res.type === "opaque") { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {}); } return res; };
   if (req.mode === "navigate" || new URL(req.url).origin === self.location.origin) {
     // página: tenta a internet primeiro (pega atualizações) e usa o cache se estiver sem rede
-    e.respondWith(fetch(req).then(keep).catch(() => caches.match(req).then((h) => h || caches.match("./index.html"))));
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(keep).catch(() => caches.match(req).then((h) => h || caches.match("./index.html"))));
     return;
   }
   // scripts, ícones etc.: usa o cache primeiro

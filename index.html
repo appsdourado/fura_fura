@@ -39,6 +39,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
+const VERSAO = "2026-11-11 (créditos + PIX)";
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
@@ -517,7 +518,7 @@ function App() {
         <div className="grid grid-cols-6 gap-1.5 min-[400px]:grid-cols-7 sm:grid-cols-10 sm:gap-2 md:grid-cols-12 lg:grid-cols-[repeat(20,minmax(0,1fr))] lg:gap-1 xl:grid-cols-[repeat(25,minmax(0,1fr))]">${cells}</div>
       </div>
     </main>
-    <footer className="pb-6 text-center text-xs text-slate-500">Nº de série: ${SERIAL}</footer>
+    <footer className="pb-6 text-center text-xs text-slate-500">Nº de série: ${SERIAL} · Versão ${VERSAO}</footer>
 
     ${view !== null && win && html`<${Modal} title="Número premiado!" onClose=${closeView}>
       <div className="text-center">
