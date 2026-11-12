@@ -40,13 +40,13 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-11 (PIX com ponto de venda)";
+const VERSAO = "2026-11-12 (pagamento automático)";
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
-const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: "", pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: "", pixDesc: "" });
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: "", pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: "", pixDesc: "", apiUrl: "", charges: [], usadas: [] });
 const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d }; if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
 const rd = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const brl = (v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -105,6 +105,17 @@ const actions = {
   confirmPay() { update((s) => ({ ...s, paid: (s.paid || 0) + (s.pend || 0), pend: 0, pendSince: 0 })); },
   expirePend() { update((s) => ((s.pend || 0) > 0 ? { ...s, pend: 0, pendSince: 0 } : s)); },
   zeroCredits() { update((s) => ({ ...s, paid: 0, pend: 0, pendSince: 0 })); },
+  saveApi(url) { update((s) => ({ ...s, apiUrl: (url || "").trim().replace(/\/+$/, "") })); },
+  addCharge(c) { update((s) => ({ ...s, charges: [...(s.charges || []), c].slice(-5) })); },
+  dropCharge(id) { update((s) => ({ ...s, charges: (s.charges || []).filter((x) => x.id !== id) })); },
+  releaseCharge(id) {
+    update((s) => {
+      const c = (s.charges || []).find((x) => x.id === id);
+      if (!c || (s.usadas || []).includes(id)) return s;
+      const pend = Math.max(0, (s.pend || 0) - c.creditos);
+      return { ...s, paid: (s.paid || 0) + c.creditos, pend, pendSince: pend ? s.pendSince : 0, charges: s.charges.filter((x) => x.id !== id), usadas: [...(s.usadas || []), id].slice(-50) };
+    });
+  },
   saveConfig(store, price) { update((s) => ({ ...s, store: store.trim() || s.store, price })); },
   reset() { update((s) => ({ ...s, holes: {}, current: 0, paid: 0, pend: 0, pendSince: 0 })); },
   async checkPass(p) { const s = snap(); return s.passHash ? (await sha256(p)) === s.passHash : p === DEF_PASS; },
@@ -266,6 +277,7 @@ function AdminPanel({ onClose }) {
   const [pk, setPk] = useState(g.pixKey || "");
   const [pc, setPc] = useState(g.pixCity || "");
   const [pd, setPd] = useState(g.pixDesc || "");
+  const [au, setAu] = useState(g.apiUrl || "");
   const [qr, setQr] = useState(g.pixQr || "");
   const [galQ, setGalQ] = useState(false);
   const [pxm, setPxm] = useState(null);
@@ -285,6 +297,13 @@ function AdminPanel({ onClose }) {
     </div>
   <//>`;
 
+  const testarApi = async () => {
+    try {
+      const r = await fetch(au.trim().replace(/\/+$/, "") + "/ping");
+      const j = await r.json();
+      setPxm(j.ok ? { ok: true, t: "Servidor conectado." + (j.mp ? "" : " Falta configurar o token do Mercado Pago.") } : { ok: false, t: "O servidor respondeu com erro." });
+    } catch (e) { setPxm({ ok: false, t: "Não consegui falar com o servidor. Confira o endereço." }); }
+  };
   const furos = Object.keys(g.holes).length;
   const lista = Object.keys(g.prizes).map(Number).sort((a, b) => a - b);
   const salvar = () => {
@@ -331,9 +350,11 @@ function AdminPanel({ onClose }) {
         <input className=${inp} placeholder="Chave PIX (telefone com +55, ex: +5527999999999)" value=${pk} onChange=${(e) => setPk(e.target.value)} />
         <input className=${inp} placeholder="Cidade do recebedor (até 15 letras, ex: Vitoria)" value=${pc} onChange=${(e) => setPc(e.target.value)} />
         <input className=${inp} placeholder="Ponto de venda (aparece no PIX, ex: PDV 01 Balcao)" maxLength="40" value=${pd} onChange=${(e) => setPd(e.target.value)} />
+        <input className=${inp} placeholder="Endereço do servidor de pagamento automático (https://...workers.dev)" value=${au} onChange=${(e) => setAu(e.target.value)} />
+        <button type="button" onClick=${testarApi} className=${btn + "bg-slate-700 hover:bg-slate-600"}>🔌 Testar servidor</button>
         <input className=${inp} placeholder="Imagem do QR Code (opcional, reserva)" value=${qr} onChange=${(e) => setQr(e.target.value)} />
         <button type="button" onClick=${() => setGalQ(true)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>🖼 Escolher QR Code da pasta</button>
-        <button type="button" onClick=${() => { actions.savePix(pk, qr, pc, pd); setPxm({ ok: true, t: "PIX salvo." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Salvar PIX</button>
+        <button type="button" onClick=${() => { actions.savePix(pk, qr, pc, pd); actions.saveApi(au); setPxm({ ok: true, t: "PIX salvo." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Salvar PIX</button>
       </div>
       ${qr.trim() && html`<div className="mt-2 flex items-center gap-2 text-xs text-slate-400"><${PrizeImage} key=${qr} src=${resolveImg(qr)} className="h-24 w-24 rounded-lg" /> Prévia do QR Code</div>`}
       <${Note} m=${pxm} />
@@ -488,7 +509,49 @@ function App() {
   }, [pendN, since]);
   const restante = pendN > 0 ? Math.min(300000, Math.max(0, 300000 - (now - since))) : 0;
   const mmss = Math.floor(restante / 60000) + ":" + String(Math.floor((restante % 60000) / 1000)).padStart(2, "0");
-  const payloadPix = (g.pixKey && pendN > 0) ? pixPayload(g.pixKey, pendN * g.price, g.store, g.pixCity, g.pixDesc) : "";
+  // pagamento automático (Mercado Pago): cria a cobrança ao abrir "Pagar" e confere o pagamento sozinho
+  const valorPend = Number((pendN * g.price).toFixed(2));
+  const cobr = (g.charges || []).find((c) => c.creditos === pendN && Math.abs(c.valor - valorPend) < 0.005 && Date.now() < c.exp);
+  const [criando, setCriando] = useState(false);
+  const [erroCob, setErroCob] = useState("");
+  const [aviso, setAviso] = useState("");
+  useEffect(() => { if (!pay) setErroCob(""); }, [pay]);
+  useEffect(() => {
+    if (!pay || !g.apiUrl || pendN === 0 || cobr || criando || erroCob) return;
+    setCriando(true);
+    fetch(g.apiUrl + "/cobrar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valor: valorPend, creditos: pendN, pdv: g.pixDesc || "", loja: g.store }) })
+      .then((r) => r.json().then((j) => { if (!r.ok || !j.qr_code) throw new Error(j.erro || "erro " + r.status); return j; }))
+      .then((j) => actions.addCharge({ id: String(j.id), creditos: pendN, valor: valorPend, code: j.qr_code, b64: j.qr_base64, exp: j.exp }))
+      .catch((e) => setErroCob(e.message || "falha"))
+      .finally(() => setCriando(false));
+  }, [pay, g.apiUrl, pendN, cobr ? cobr.id : "", erroCob]);
+  const chIds = (g.charges || []).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (!g.apiUrl || !chIds) return;
+    let vivo = true;
+    const tick = async () => {
+      for (const c of (snap().charges || [])) {
+        if (Date.now() > c.exp) { actions.dropCharge(c.id); continue; }
+        try {
+          const r = await fetch(g.apiUrl + "/status?id=" + encodeURIComponent(c.id));
+          const j = await r.json();
+          if (!vivo) return;
+          if (j.status === "approved" && Math.abs(j.valor - c.valor) < 0.005) {
+            if (!(snap().usadas || []).includes(c.id)) {
+              actions.releaseCharge(c.id);
+              setAviso(c.creditos + " crédito(s) liberado(s)! Pagamento aprovado.");
+              setPay(false);
+              setTimeout(() => setAviso(""), 6000);
+            }
+          } else if (["cancelled", "rejected"].includes(j.status)) actions.dropCharge(c.id);
+        } catch (e) {}
+      }
+    };
+    tick();
+    const t = setInterval(tick, 3000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [g.apiUrl, chIds]);
+  const payloadPix = (g.pixKey && pendN > 0 && (!g.apiUrl || erroCob)) ? pixPayload(g.pixKey, pendN * g.price, g.store, g.pixCity, g.pixDesc) : "";
   const [copiado, setCopiado] = useState("");
   const copiar = async (t) => {
     try { await navigator.clipboard.writeText(t); setCopiado("Copiado!"); } catch (e) { setCopiado("Não foi possível copiar."); }
@@ -589,6 +652,8 @@ function App() {
       </div>
     <//>`}
 
+    ${aviso && html`<div className="fixed inset-x-3 bottom-4 z-[70] mx-auto w-fit max-w-full rounded-xl bg-emerald-500 px-5 py-3 text-center text-lg font-extrabold text-slate-900 shadow-2xl">✅ ${aviso}</div>`}
+
     ${pay && html`<${Modal} title="Pagamento" onClose=${closePay}>
       <div className="text-center">
         <h2 className="text-2xl font-extrabold text-amber-300">💲 Pagamento via PIX</h2>
@@ -601,9 +666,17 @@ function App() {
             <button type="button" onClick=${() => copiar(payloadPix)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">📋 Copiar código PIX (copia e cola)</button>
             ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}`
           : (g.pixQr ? html`<${QrImg} key=${g.pixQr} src=${g.pixQr} />` : null)}
-        ${g.pixKey
+        ${(g.apiUrl && !erroCob && pendN > 0)
+          ? (cobr
+            ? html`<img src=${"data:image/png;base64," + cobr.b64} alt="QR Code PIX" className="mx-auto my-3 h-[34vh] min-h-[12rem] w-[34vh] min-w-[12rem] rounded-xl bg-white p-1" />
+              <button type="button" onClick=${() => copiar(cobr.code)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">📋 Copiar código PIX (copia e cola)</button>
+              ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}
+              <p className="mt-3 animate-pulse text-lg font-extrabold text-amber-300">⏳ Aguardando o pagamento… os créditos são liberados sozinhos</p>`
+            : html`<p className="my-6 animate-pulse text-lg font-bold">Gerando a cobrança…</p>`)
+          : g.pixKey
           ? html`<p className="mt-3 text-xs uppercase text-slate-400">Chave PIX</p><p className="break-all text-xl font-extrabold">${g.pixKey}</p>`
           : html`<p className="mt-3 text-sm font-semibold text-red-300">Chave PIX não cadastrada. Cadastre na Área do Administrador.</p>`}
+        ${g.apiUrl && erroCob && html`<p className="mt-3 text-sm font-semibold text-red-300">Não foi possível gerar a cobrança automática (${erroCob}). Use o QR manual e confirme o pagamento.</p><button type="button" onClick=${() => setErroCob("")} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">🔄 Tentar de novo</button>`}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick=${closePay} className="rounded-xl bg-slate-600 px-5 py-3 font-bold hover:bg-slate-500">${(g.pend || 0) > 0 ? "Cancelar" : "Fechar"}</button>
           ${(g.pend || 0) > 0 && html`<button type="button" onClick=${() => { actions.confirmPay(); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Confirmar pagamento</button>`}
