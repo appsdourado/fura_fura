@@ -40,14 +40,25 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-12 (pagamento automático)";
+const VERSAO = "2026-11-12 (configuração padrão)";
+
+/* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
+   Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
+   (O nome do ponto de venda, PDV 01, PDV 02..., continua sendo definido em cada aparelho.) */
+const CONFIG = {
+  apiUrl: "",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
+  pixKey: "",   // chave PIX (usada só no QR Code manual de reserva)
+  pixCity: "",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
+};
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
-const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: "", pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: "", pixDesc: "", apiUrl: "", charges: [], usadas: [] });
-const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d }; if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
+const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d };
+      for (const k of ["apiUrl", "pixKey", "pixCity"]) if (!s[k]) s[k] = CONFIG[k]; // aparelho sem valor salvo usa o padrão
+      s.apiUrl = (s.apiUrl || "").replace(/\/+$/, ""); if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
 const rd = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const brl = (v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 async function sha256(t) {
