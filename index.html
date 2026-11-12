@@ -46,9 +46,9 @@ const VERSAO = "2026-11-12 (configuração padrão)";
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
    (O nome do ponto de venda, PDV 01, PDV 02..., continua sendo definido em cada aparelho.) */
 const CONFIG = {
-  apiUrl: "",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
-  pixKey: "",   // chave PIX (usada só no QR Code manual de reserva)
-  pixCity: "",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
+  apiUrl: "https://furafuradigital.apps-dourado.workers.dev",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
+  pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
+  pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
