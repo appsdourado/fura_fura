@@ -41,7 +41,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (proteção em 1 min)";
+const VERSAO = "2026-11-13 (patrocinadores e ajustes)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -51,19 +51,24 @@ const CONFIG = {
   pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
-  bannerSeg: 10, // segundos que o banner fica na tela
-  premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
-  protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
+  bannerSeg: 8, // segundos que o banner fica na tela
+  premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
+  protecaoSeg: 45, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
+  patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
+  patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
-const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, sponsors: [0, 1, 2, 3].map((i) => ({ img: CONFIG.patrocinadores[i] || "", on: true })), sponsorSec: CONFIG.patrocinioSeg, manual: 0, sponsorBtn: true, confirmBtn: true, apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
 const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d };
       for (const k of ["apiUrl", "pixKey", "pixCity", "banner"]) if (!s[k]) s[k] = CONFIG[k]; // aparelho sem valor salvo usa o padrão
       if (!s.bannerSec) s.bannerSec = CONFIG.bannerSeg;
+      const sp0 = Array.isArray(s.sponsors) ? s.sponsors : [];
+      s.sponsors = [0, 1, 2, 3].map((i) => { const x = sp0[i] || {}; return { img: x.img || CONFIG.patrocinadores[i] || "", on: x.on !== false }; });
+      if (!s.sponsorSec) s.sponsorSec = CONFIG.patrocinioSeg;
       s.apiUrl = (s.apiUrl || "").replace(/\/+$/, ""); if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
 const rd = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const brl = (v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -119,10 +124,12 @@ const actions = {
   resetCurrent() { update((s) => ({ ...s, current: 0 })); },
   savePix(key, qr, city, desc) { update((s) => ({ ...s, pixKey: key.trim(), pixQr: resolveImg(qr), pixCity: (city || "").trim(), pixDesc: (desc || "").trim() })); },
   addCredit() { update((s) => ({ ...s, pend: (s.pend || 0) + 1, pendSince: Date.now() })); },
-  confirmPay() { update((s) => ({ ...s, paid: (s.paid || 0) + (s.pend || 0), pend: 0, pendSince: 0 })); },
+  confirmPay() { update((s) => ({ ...s, paid: (s.paid || 0) + (s.pend || 0), manual: (s.manual || 0) + (s.pend || 0), pend: 0, pendSince: 0 })); },
   expirePend() { update((s) => ((s.pend || 0) > 0 ? { ...s, pend: 0, pendSince: 0 } : s)); },
   zeroCredits() { update((s) => ({ ...s, paid: 0, pend: 0, pendSince: 0 })); },
   saveBanner(on, img, sec) { update((s) => ({ ...s, bannerOn: !!on, banner: resolveImg(img), bannerSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
+  saveSponsors(list, sec) { update((s) => ({ ...s, sponsors: list.slice(0, 4).map((x) => ({ img: resolveImg(x.img), on: !!x.on })), sponsorSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
+  setFlag(k, v) { if (["sponsorBtn", "confirmBtn"].includes(k)) update((s) => ({ ...s, [k]: !!v })); },
   saveApi(url) { update((s) => ({ ...s, apiUrl: (url || "").trim().replace(/\/+$/, "") })); },
   addCharge(c) { update((s) => ({ ...s, charges: [...(s.charges || []), c].slice(-5) })); },
   dropCharge(id) { update((s) => ({ ...s, charges: (s.charges || []).filter((x) => x.id !== id) })); },
@@ -135,7 +142,7 @@ const actions = {
     });
   },
   saveConfig(store, price) { update((s) => ({ ...s, store: store.trim() || s.store, price })); },
-  reset() { update((s) => ({ ...s, holes: {}, current: 0, paid: 0, pend: 0, pendSince: 0 })); },
+  reset() { update((s) => ({ ...s, holes: {}, current: 0, paid: 0, pend: 0, pendSince: 0, manual: 0 })); },
   async checkPass(p) { const s = snap(); return s.passHash ? (await sha256(p)) === s.passHash : p === DEF_PASS; },
   async changePass(cur, next, conf) {
     if (!(await actions.checkPass(cur))) return "Senha atual incorreta.";
@@ -301,6 +308,11 @@ function AdminPanel({ onClose }) {
   const [bs, setBs] = useState(String(g.bannerSec || 8));
   const [galB, setGalB] = useState(false);
   const [bm, setBm] = useState(null);
+  const [sp, setSp] = useState(() => (g.sponsors || [0, 1, 2, 3].map(() => ({ img: "", on: true }))).map((x) => ({ ...x })));
+  const [sps, setSps] = useState(String(g.sponsorSec || 8));
+  const [galS, setGalS] = useState(-1);
+  const [spm, setSpm] = useState(null);
+  const setSpI = (i, patch) => setSp((a) => a.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const [qr, setQr] = useState(g.pixQr || "");
   const [galQ, setGalQ] = useState(false);
   const [pxm, setPxm] = useState(null);
@@ -360,11 +372,13 @@ function AdminPanel({ onClose }) {
     ${gal && html`<${Galeria} onPick=${(v) => { setPimg(v); setGal(false); }} onClose=${() => setGal(false)} />`}
     ${galQ && html`<${Galeria} onPick=${(v) => { setQr(v); setGalQ(false); }} onClose=${() => setGalQ(false)} />`}
     ${galB && html`<${Galeria} onPick=${(v) => { setBa(v); setGalB(false); }} onClose=${() => setGalB(false)} />`}
+    ${galS >= 0 && html`<${Galeria} onPick=${(v) => { setSpI(galS, { img: v }); setGalS(-1); }} onClose=${() => setGalS(-1)} />`}
 
     <section className="mb-5 rounded-xl border border-amber-500/40 bg-slate-900 p-3">
       <${H}>Faturamento<//>
       <p className="text-sm text-slate-300">${furos} furos × ${brl(g.price)} =</p>
       <p className="text-3xl font-extrabold text-amber-300">${brl(furos * g.price)}</p>
+      <p className="mt-2 text-sm text-slate-300">Créditos liberados manualmente: <b className="text-amber-300">${g.manual || 0}</b> (${brl((g.manual || 0) * g.price)})</p>
       <button type="button" onClick=${() => actions.zeroCredits()} className=${btn + "mt-2 bg-slate-700 hover:bg-slate-600"}>Zerar créditos (${(g.paid || 0) + (g.pend || 0)})</button>
     </section>
 
@@ -383,7 +397,30 @@ function AdminPanel({ onClose }) {
     </section>
 
     <section className="mb-5">
+      <${H}>Patrocinadores (proteção de tela)<//>
+      <p className="mb-2 text-xs text-slate-400">Os banners dos patrocinadores entram na proteção de tela depois da rotação dos prêmios, e o ciclo continua. Cada um pode ser trocado ou desativado.</p>
+      <button type="button" onClick=${() => actions.setFlag("sponsorBtn", g.sponsorBtn === false)} className=${btn + "mb-3 " + (g.sponsorBtn === false ? "bg-red-700 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-500")}>Botão JOGAR nos patrocinadores: ${g.sponsorBtn === false ? "DESABILITADO" : "HABILITADO"}</button>
+      ${sp.map((x, i) => html`<div key=${i} className="mb-3 rounded-lg border border-slate-700 bg-slate-900 p-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-sm font-bold">Patrocinador ${i + 1}</span>
+          <button type="button" onClick=${() => setSpI(i, { on: !x.on })} className=${btn + (x.on ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-700 hover:bg-red-600")}>${x.on ? "ATIVO" : "DESATIVADO"}</button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <input className=${inp} placeholder="Banner (nome do arquivo ou link)" value=${x.img} onChange=${(e) => setSpI(i, { img: e.target.value })} />
+          <button type="button" onClick=${() => setGalS(i)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>🖼 Escolher da pasta</button>
+        </div>
+        ${x.img.trim() && html`<div className="mt-2"><${PrizeImage} key=${x.img} src=${resolveImg(x.img)} className="h-14 w-24 rounded-lg" /></div>`}
+      </div>`)}
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input className=${inp} inputMode="numeric" maxLength="3" placeholder="Segundos de cada patrocinador na tela (ex: 8)" value=${sps} onChange=${(e) => setSps(e.target.value.replace(/\D/g, ""))} />
+        <button type="button" onClick=${() => { actions.saveSponsors(sp, sps); setSpm({ ok: true, t: "Patrocinadores salvos." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Salvar patrocinadores</button>
+      </div>
+      <${Note} m=${spm} />
+    </section>
+
+    <section className="mb-5">
       <${H}>PIX (pagamento)<//>
+      <button type="button" onClick=${() => actions.setFlag("confirmBtn", g.confirmBtn === false)} className=${btn + "mb-2 " + (g.confirmBtn === false ? "bg-red-700 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-500")}>Botão Confirmar pagamento: ${g.confirmBtn === false ? "DESABILITADO" : "HABILITADO"}</button>
       <div className="grid gap-2 sm:grid-cols-2">
         <input className=${inp} placeholder="Chave PIX (telefone com +55, ex: +5527999999999)" value=${pk} onChange=${(e) => setPk(e.target.value)} />
         <input className=${inp} placeholder="Cidade do recebedor (até 15 letras, ex: Vitoria)" value=${pc} onChange=${(e) => setPc(e.target.value)} />
@@ -513,9 +550,10 @@ function App() {
   const g = useGame();
   useDpad();
   const [view, setView] = useState(null);
+  const [novo, setNovo] = useState(false);
   const [list, setList] = useState(false);
   const [admin, setAdmin] = useState(false);
-  const pick = useCallback((n) => { if (actions.furar(n)) setView(n); }, []);
+  const pick = useCallback((n) => { const novo0 = !snap().holes[n]; if (actions.furar(n)) { setNovo(novo0); setView(n); } }, []);
   const closeView = useCallback(() => setView(null), []);
   const closeList = useCallback(() => { setList(false); setLoop(false); }, []);
   const closeAdmin = useCallback(() => setAdmin(false), []);
@@ -575,14 +613,15 @@ function App() {
   const slides = [];
   if (bannerOn) slides.push({ tipo: "banner" });
   disp.forEach((p) => slides.push({ tipo: "premio", p }));
+  (g.sponsors || []).forEach((x, i) => { if (x.on !== false && x.img) slides.push({ tipo: "patro", img: x.img, n: i + 1 }); });
   const cur2 = !sv ? null : sv.inicio ? (bannerOn ? { tipo: "banner" } : null) : (slides.length ? slides[svIdx % slides.length] : null);
   useEffect(() => {
     if (!sv) return;
     if (!cur2) { setSv(null); return; }
-    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : CONFIG.premioSeg) * 1000;
+    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : cur2.tipo === "patro" ? Math.max(1, g.sponsorSec || 8) : CONFIG.premioSeg) * 1000;
     const t = setTimeout(() => { if (sv.inicio) setSv(null); else setSvIdx((i) => (i + 1) % Math.max(1, slides.length)); }, ms);
     return () => clearTimeout(t);
-  }, [sv, svIdx, slides.length, g.bannerSec, bannerOn]);
+  }, [sv, svIdx, slides.length, g.bannerSec, g.sponsorSec, bannerOn]);
   useEffect(() => {
     if (sv || janela || slides.length === 0) return;
     const t = setTimeout(() => { setSvIdx(0); setSv({ inicio: false }); }, CONFIG.protecaoSeg * 1000);
@@ -690,10 +729,11 @@ function App() {
     ${view !== null && win && html`<${Modal} title="Número premiado!" onClose=${closeView}>
       <div className="text-center">
         <div className="text-4xl">🎉</div>
-        <h2 className="mt-1 text-2xl font-extrabold text-emerald-400">Número premiado!</h2>
+        <h2 className="mt-1 text-3xl font-extrabold text-emerald-400">${novo ? "VOCÊ GANHOU!" : "Número premiado!"}</h2>
         <p className="mb-3 font-mono text-slate-300">Número ${view}</p>
         <${PrizeImage} key=${win.img} src=${win.img} className="mx-auto h-48 w-48 rounded-2xl text-6xl" />
         <p className="mt-3 text-xl font-bold">${win.name}</p>
+        ${novo && html`<p className="mt-3 text-xl font-extrabold text-amber-300">Chame o atendente para receber seu prêmio.</p>`}
         <button type="button" onClick=${closeView} className="mt-5 w-full rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">Continuar</button>
       </div>
     <//>`}
@@ -745,7 +785,7 @@ function App() {
         ${g.apiUrl && erroCob && html`<p className="mt-3 text-sm font-semibold text-red-300">Não foi possível gerar a cobrança automática (${erroCob}). Use o QR manual e confirme o pagamento.</p><button type="button" onClick=${() => setErroCob("")} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">🔄 Tentar de novo</button>`}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick=${closePay} className="rounded-xl bg-slate-600 px-5 py-3 font-bold hover:bg-slate-500">${(g.pend || 0) > 0 ? "Cancelar" : "Fechar"}</button>
-          ${(g.pend || 0) > 0 && html`<button type="button" onClick=${() => { actions.confirmPay(); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Confirmar pagamento</button>`}
+          ${(g.pend || 0) > 0 && g.confirmBtn !== false && html`<button type="button" onClick=${() => { actions.confirmPay(); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Confirmar pagamento</button>`}
         </div>
       </div>
     <//>`}
@@ -777,16 +817,18 @@ function App() {
     ${admin && html`<${AdminPanel} onClose=${closeAdmin} />`}
 
     ${sv && cur2 && html`<div role="dialog" aria-modal="true" aria-label="Proteção de tela" className="fixed inset-0 z-[80] flex flex-col bg-slate-950">
-      <div key=${svIdx + (sv.inicio ? "i" : "c")} className="ff-in flex min-h-0 flex-1 flex-col items-center justify-center p-3 text-center">
+      <div key=${svIdx + (sv.inicio ? "i" : "c")} className="ff-in relative flex min-h-0 flex-1 flex-col items-center justify-center p-3 text-center">
         ${cur2.tipo === "banner"
-          ? html`<img src=${resolveImg(g.banner)} alt="Banner" onError=${() => { if (sv.inicio) setSv(null); }} className="h-[78vh] w-full object-contain" />`
+          ? html`<img src=${resolveImg(g.banner)} alt="Banner" onError=${() => { if (sv.inicio) setSv(null); }} className="absolute inset-0 h-full w-full object-contain" />`
+          : cur2.tipo === "patro"
+          ? html`<img src=${resolveImg(cur2.img)} alt=${"Patrocinador " + cur2.n} className="absolute inset-0 h-full w-full object-contain" />`
           : html`<h2 className="mb-3 text-2xl font-extrabold text-amber-300 sm:text-4xl">🎁 Prêmios em jogo</h2>
             <${PrizeImage} key=${cur2.p.img} src=${cur2.p.img} className="h-[46vh] w-[46vh] rounded-3xl text-8xl" />
             <p className="mt-4 text-4xl font-extrabold sm:text-6xl">${cur2.p.name}</p>`}
       </div>
-      <div className="flex justify-center p-3">
-        <button type="button" autoFocus=${true} onClick=${() => setSv(null)} className="rounded-2xl bg-emerald-500 px-16 py-4 text-3xl font-extrabold text-slate-900 shadow-2xl hover:bg-emerald-400">JOGAR</button>
-      </div>
+      ${!(cur2.tipo === "patro" && g.sponsorBtn === false) && html`<div className="flex justify-center p-2">
+        <button type="button" autoFocus=${true} onClick=${() => setSv(null)} className="rounded-xl bg-emerald-500 px-10 py-2 text-xl font-extrabold text-slate-900 shadow-2xl hover:bg-emerald-400">JOGAR</button>
+      </div>`}
     </div>`}
   </div>`;
 }
