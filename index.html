@@ -41,7 +41,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (admin no rodapé)";
+const VERSAO = "2026-11-13 (proteção em 1 min)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -52,7 +52,8 @@ const CONFIG = {
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.png",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 10, // segundos que o banner fica na tela
-  premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
+  premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
+  protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
@@ -369,7 +370,7 @@ function AdminPanel({ onClose }) {
 
     <section className="mb-5">
       <${H}>Banner e proteção de tela<//>
-      <p className="mb-2 text-xs text-slate-400">O banner aparece ao abrir o jogo. Depois de 2 minutos sem jogar, a proteção de tela mostra o banner e os prêmios em rotação, até tocar em JOGAR.</p>
+      <p className="mb-2 text-xs text-slate-400">O banner aparece ao abrir o jogo. Depois de ${CONFIG.protecaoSeg} segundos sem jogar, a proteção de tela mostra o banner e os prêmios em rotação, até tocar em JOGAR.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         <button type="button" onClick=${() => setBo(!bo)} className=${btn + (bo ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-700 hover:bg-red-600")}>Banner: ${bo ? "LIGADO" : "DESLIGADO"}</button>
         <input className=${inp} inputMode="numeric" maxLength="3" placeholder="Segundos do banner na tela (ex: 8)" value=${bs} onChange=${(e) => setBs(e.target.value.replace(/\D/g, ""))} />
@@ -584,7 +585,7 @@ function App() {
   }, [sv, svIdx, slides.length, g.bannerSec, bannerOn]);
   useEffect(() => {
     if (sv || janela || slides.length === 0) return;
-    const t = setTimeout(() => { setSvIdx(0); setSv({ inicio: false }); }, 120000);
+    const t = setTimeout(() => { setSvIdx(0); setSv({ inicio: false }); }, CONFIG.protecaoSeg * 1000);
     const bump = () => setIdleTick((x) => x + 1);
     const evs = ["pointerdown", "keydown", "touchstart", "wheel"];
     evs.forEach((ev) => window.addEventListener(ev, bump, { passive: true }));
