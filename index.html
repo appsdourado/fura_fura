@@ -41,7 +41,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (banner e proteção de tela)";
+const VERSAO = "2026-11-13 (rotação de 5 s)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -51,7 +51,8 @@ const CONFIG = {
   pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.png",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
-  bannerSeg: 8, // segundos que o banner fica na tela
+  bannerSeg: 10, // segundos que o banner fica na tela
+  premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
@@ -577,7 +578,7 @@ function App() {
   useEffect(() => {
     if (!sv) return;
     if (!cur2) { setSv(null); return; }
-    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : 10) * 1000;
+    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : CONFIG.premioSeg) * 1000;
     const t = setTimeout(() => { if (sv.inicio) setSv(null); else setSvIdx((i) => (i + 1) % Math.max(1, slides.length)); }, ms);
     return () => clearTimeout(t);
   }, [sv, svIdx, slides.length, g.bannerSec, bannerOn]);
@@ -635,7 +636,7 @@ function App() {
   useEffect(() => {
     if (!loop) return;
     if (disp.length === 0) { setLoop(false); return; }
-    const t = setTimeout(() => setIdx((i) => (i + 1) % disp.length), 10000);
+    const t = setTimeout(() => setIdx((i) => (i + 1) % disp.length), CONFIG.premioSeg * 1000);
     return () => clearTimeout(t);
   }, [loop, idx, disp.length]);
   const stats = [["Furados", "Furados", holes.length, "text-blue-300"], ["Livres", "Números disponíveis", TOTAL - holes.length, "text-slate-100"], ["Sorteados", "Prêmios sorteados", sorteados.length, "text-emerald-300"], ["Prêm. livres", "Prêmios disponíveis", disp.length, "text-amber-300"]];
@@ -758,7 +759,7 @@ function App() {
           <p className="mt-3 text-3xl font-extrabold sm:text-5xl">${cur.name}</p>
         </div>
         <p className="mt-2 text-sm text-slate-400">Prêmio ${idx % disp.length + 1} de ${disp.length}</p>
-        <div className="mx-auto mt-3 h-2 w-full max-w-md overflow-hidden rounded bg-slate-700"><div key=${idx} className="ff-bar h-full bg-amber-400"></div></div>
+        <div className="mx-auto mt-3 h-2 w-full max-w-md overflow-hidden rounded bg-slate-700"><div key=${idx} className="ff-bar h-full bg-amber-400" style=${{ animationDuration: CONFIG.premioSeg + "s" }}></div></div>
       </div>
     <//>`}
 
