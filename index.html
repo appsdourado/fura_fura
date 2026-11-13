@@ -41,7 +41,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-12 (visual mais leve)";
+const VERSAO = "2026-11-13 (banner e proteção de tela)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -50,15 +50,18 @@ const CONFIG = {
   apiUrl: "https://furafuradigital.apps-dourado.workers.dev",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
   pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
+  banner: "bannerhoriz.png",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
+  bannerSeg: 8, // segundos que o banner fica na tela
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
-const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
 const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d };
-      for (const k of ["apiUrl", "pixKey", "pixCity"]) if (!s[k]) s[k] = CONFIG[k]; // aparelho sem valor salvo usa o padrão
+      for (const k of ["apiUrl", "pixKey", "pixCity", "banner"]) if (!s[k]) s[k] = CONFIG[k]; // aparelho sem valor salvo usa o padrão
+      if (!s.bannerSec) s.bannerSec = CONFIG.bannerSeg;
       s.apiUrl = (s.apiUrl || "").replace(/\/+$/, ""); if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
 const rd = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const brl = (v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -117,6 +120,7 @@ const actions = {
   confirmPay() { update((s) => ({ ...s, paid: (s.paid || 0) + (s.pend || 0), pend: 0, pendSince: 0 })); },
   expirePend() { update((s) => ((s.pend || 0) > 0 ? { ...s, pend: 0, pendSince: 0 } : s)); },
   zeroCredits() { update((s) => ({ ...s, paid: 0, pend: 0, pendSince: 0 })); },
+  saveBanner(on, img, sec) { update((s) => ({ ...s, bannerOn: !!on, banner: resolveImg(img), bannerSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
   saveApi(url) { update((s) => ({ ...s, apiUrl: (url || "").trim().replace(/\/+$/, "") })); },
   addCharge(c) { update((s) => ({ ...s, charges: [...(s.charges || []), c].slice(-5) })); },
   dropCharge(id) { update((s) => ({ ...s, charges: (s.charges || []).filter((x) => x.id !== id) })); },
@@ -290,6 +294,11 @@ function AdminPanel({ onClose }) {
   const [pc, setPc] = useState(g.pixCity || "");
   const [pd, setPd] = useState(g.pixDesc || "");
   const [au, setAu] = useState(g.apiUrl || "");
+  const [bo, setBo] = useState(g.bannerOn !== false);
+  const [ba, setBa] = useState(g.banner || "");
+  const [bs, setBs] = useState(String(g.bannerSec || 8));
+  const [galB, setGalB] = useState(false);
+  const [bm, setBm] = useState(null);
   const [qr, setQr] = useState(g.pixQr || "");
   const [galQ, setGalQ] = useState(false);
   const [pxm, setPxm] = useState(null);
@@ -348,12 +357,27 @@ function AdminPanel({ onClose }) {
 
     ${gal && html`<${Galeria} onPick=${(v) => { setPimg(v); setGal(false); }} onClose=${() => setGal(false)} />`}
     ${galQ && html`<${Galeria} onPick=${(v) => { setQr(v); setGalQ(false); }} onClose=${() => setGalQ(false)} />`}
+    ${galB && html`<${Galeria} onPick=${(v) => { setBa(v); setGalB(false); }} onClose=${() => setGalB(false)} />`}
 
     <section className="mb-5 rounded-xl border border-amber-500/40 bg-slate-900 p-3">
       <${H}>Faturamento<//>
       <p className="text-sm text-slate-300">${furos} furos × ${brl(g.price)} =</p>
       <p className="text-3xl font-extrabold text-amber-300">${brl(furos * g.price)}</p>
       <button type="button" onClick=${() => actions.zeroCredits()} className=${btn + "mt-2 bg-slate-700 hover:bg-slate-600"}>Zerar créditos (${(g.paid || 0) + (g.pend || 0)})</button>
+    </section>
+
+    <section className="mb-5">
+      <${H}>Banner e proteção de tela<//>
+      <p className="mb-2 text-xs text-slate-400">O banner aparece ao abrir o jogo. Depois de 2 minutos sem jogar, a proteção de tela mostra o banner e os prêmios em rotação, até tocar em JOGAR.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button type="button" onClick=${() => setBo(!bo)} className=${btn + (bo ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-700 hover:bg-red-600")}>Banner: ${bo ? "LIGADO" : "DESLIGADO"}</button>
+        <input className=${inp} inputMode="numeric" maxLength="3" placeholder="Segundos do banner na tela (ex: 8)" value=${bs} onChange=${(e) => setBs(e.target.value.replace(/\D/g, ""))} />
+        <input className=${inp} placeholder="Banner (nome do arquivo ou link)" value=${ba} onChange=${(e) => setBa(e.target.value)} />
+        <button type="button" onClick=${() => setGalB(true)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>🖼 Escolher banner da pasta</button>
+        <button type="button" onClick=${() => { actions.saveBanner(bo, ba, bs); setBm({ ok: true, t: "Banner salvo." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Salvar banner</button>
+      </div>
+      ${ba.trim() && html`<div className="mt-2 flex items-center gap-2 text-xs text-slate-400"><${PrizeImage} key=${ba} src=${resolveImg(ba)} className="h-16 w-28 rounded-lg" /> Prévia do banner</div>`}
+      <${Note} m=${bm} />
     </section>
 
     <section className="mb-5">
@@ -500,6 +524,10 @@ function App() {
   const closeLoop = useCallback(() => setLoop(false), []);
   const [pay, setPay] = useState(false);
   const closePay = useCallback(() => setPay(false), []);
+  // proteção de tela: banner ao abrir o jogo e, depois de 2 min sem jogar, banner + prêmios em rotação
+  const [sv, setSv] = useState(() => { const s0 = snap(); return (s0.bannerOn !== false && s0.banner) ? { inicio: true } : null; });
+  const [svIdx, setSvIdx] = useState(0);
+  const [idleTick, setIdleTick] = useState(0);
   const closeDetail = useCallback(() => setDetail(null), []);
 
   const holes = Object.entries(g.holes);
@@ -540,7 +568,27 @@ function App() {
   const chIds = (g.charges || []).map((c) => c.id).join(",");
   // com uma janela aberta, pausa as animações da cartela (alivia TV box mais fraca)
   const janela = !!(list || pay || admin || detail || view !== null);
-  useEffect(() => { document.body.classList.toggle("modal-open", janela); }, [janela]);
+  useEffect(() => { document.body.classList.toggle("modal-open", janela || !!sv); }, [janela, sv]);
+  const bannerOn = g.bannerOn !== false && !!g.banner;
+  const slides = [];
+  if (bannerOn) slides.push({ tipo: "banner" });
+  disp.forEach((p) => slides.push({ tipo: "premio", p }));
+  const cur2 = !sv ? null : sv.inicio ? (bannerOn ? { tipo: "banner" } : null) : (slides.length ? slides[svIdx % slides.length] : null);
+  useEffect(() => {
+    if (!sv) return;
+    if (!cur2) { setSv(null); return; }
+    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : 10) * 1000;
+    const t = setTimeout(() => { if (sv.inicio) setSv(null); else setSvIdx((i) => (i + 1) % Math.max(1, slides.length)); }, ms);
+    return () => clearTimeout(t);
+  }, [sv, svIdx, slides.length, g.bannerSec, bannerOn]);
+  useEffect(() => {
+    if (sv || janela || slides.length === 0) return;
+    const t = setTimeout(() => { setSvIdx(0); setSv({ inicio: false }); }, 120000);
+    const bump = () => setIdleTick((x) => x + 1);
+    const evs = ["pointerdown", "keydown", "touchstart", "wheel"];
+    evs.forEach((ev) => window.addEventListener(ev, bump, { passive: true }));
+    return () => { clearTimeout(t); evs.forEach((ev) => window.removeEventListener(ev, bump)); };
+  }, [sv, janela, idleTick, slides.length]);
   useEffect(() => {
     if (!g.apiUrl || !chIds) return;
     let vivo = true;
@@ -724,6 +772,19 @@ function App() {
     <//>`}
 
     ${admin && html`<${AdminPanel} onClose=${closeAdmin} />`}
+
+    ${sv && cur2 && html`<div role="dialog" aria-modal="true" aria-label="Proteção de tela" className="fixed inset-0 z-[80] flex flex-col bg-slate-950">
+      <div key=${svIdx + (sv.inicio ? "i" : "c")} className="ff-in flex min-h-0 flex-1 flex-col items-center justify-center p-3 text-center">
+        ${cur2.tipo === "banner"
+          ? html`<img src=${resolveImg(g.banner)} alt="Banner" onError=${() => { if (sv.inicio) setSv(null); }} className="h-[78vh] w-full object-contain" />`
+          : html`<h2 className="mb-3 text-2xl font-extrabold text-amber-300 sm:text-4xl">🎁 Prêmios em jogo</h2>
+            <${PrizeImage} key=${cur2.p.img} src=${cur2.p.img} className="h-[46vh] w-[46vh] rounded-3xl text-8xl" />
+            <p className="mt-4 text-4xl font-extrabold sm:text-6xl">${cur2.p.name}</p>`}
+      </div>
+      <div className="flex justify-center p-3">
+        <button type="button" autoFocus=${true} onClick=${() => setSv(null)} className="rounded-2xl bg-emerald-500 px-16 py-4 text-3xl font-extrabold text-slate-900 shadow-2xl hover:bg-emerald-400">JOGAR</button>
+      </div>
+    </div>`}
   </div>`;
 }
 
