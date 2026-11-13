@@ -41,7 +41,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (rotação de 5 s)";
+const VERSAO = "2026-11-13 (admin no rodapé)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -52,7 +52,7 @@ const CONFIG = {
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.png",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 10, // segundos que o banner fica na tela
-  premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
+  premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
@@ -150,7 +150,7 @@ const actions = {
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]):not([type=file]), select, textarea, [tabindex="0"]';
 function Modal({ title, onClose, wide, lock, children }) {
   const ref = useRef(null);
-  useEffect(() => { const prev = document.activeElement; return () => { if (prev && prev.focus && document.contains(prev)) prev.focus({ preventScroll: true }); }; }, []);
+  useEffect(() => { const prev = document.activeElement; return () => { if (prev && prev.focus && !prev.hasAttribute("data-nodpad") && document.contains(prev)) prev.focus({ preventScroll: true }); }; }, []);
   useEffect(() => { const r = ref.current; if (r && !r.contains(document.activeElement)) { const f = r.querySelector(FOCUSABLE); if (f) f.focus(); } });
   useEffect(() => {
     const k = (e) => {
@@ -482,7 +482,7 @@ function useDpad() {
       }
       const ds = document.querySelectorAll('[role="dialog"]');
       const scope = ds.length ? ds[ds.length - 1] : document;
-      const list = [...scope.querySelectorAll(FOCUSABLE)].filter(vis);
+      const list = [...scope.querySelectorAll(FOCUSABLE)].filter((el) => vis(el) && !el.hasAttribute("data-nodpad"));
       if (!list.length) return;
       let next = null;
       if (!a || a === document.body || !list.includes(a)) next = list[0];
@@ -652,9 +652,7 @@ function App() {
           <p className="text-sm font-semibold text-amber-300 sm:text-base">${brl(g.price)} por furo</p>
         </div>
         <button type="button" onClick=${() => setList(true)} className="flex shrink-0 items-center gap-2 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-slate-900 shadow hover:bg-amber-300"><span aria-hidden="true">🎁</span><span>Ver prêmios</span></button>
-        <button type="button" aria-label="Área do Administrador" onClick=${() => setAdmin(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-semibold hover:bg-slate-700">
-          <span aria-hidden="true">⚙️</span><span className="hidden sm:inline">Área do Administrador</span>
-        </button>
+        
       </div>
       <div className="mx-auto mt-3 grid max-w-[1400px] grid-cols-4 gap-1.5 sm:gap-2">
         ${stats.map(([c, l, v, cor]) => html`<div key=${c} className="min-w-0 rounded-xl border border-slate-700 bg-slate-800 px-2 py-1.5 text-center sm:px-3 sm:text-left">
@@ -683,7 +681,10 @@ function App() {
         <div className="grid grid-cols-6 gap-1.5 min-[400px]:grid-cols-7 sm:grid-cols-10 sm:gap-2 md:grid-cols-12 lg:grid-cols-[repeat(20,minmax(0,1fr))] lg:gap-1 xl:grid-cols-[repeat(25,minmax(0,1fr))]">${cells}</div>
       </div>
     </main>
-    <footer className="pb-6 text-center text-xs text-slate-500">Nº de série: ${SERIAL} · Versão ${VERSAO}</footer>
+    <footer className="pb-6 text-center text-xs text-slate-500">
+      <div>Nº de série: ${SERIAL} · Versão ${VERSAO}</div>
+      <button type="button" tabIndex="-1" data-nodpad="1" aria-label="Área do Administrador" onClick=${(e) => { if (e.detail === 0) return; e.currentTarget.blur(); setAdmin(true); }} className="mt-3 rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-200">⚙️ Área do Administrador</button>
+    </footer>
 
     ${view !== null && win && html`<${Modal} title="Número premiado!" onClose=${closeView}>
       <div className="text-center">
