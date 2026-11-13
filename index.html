@@ -28,6 +28,7 @@
   @keyframes ffBar { from { width: 0; } to { width: 100%; } }
   .ff-bar { animation: ffBar 10s linear forwards; }
   body.modal-open main * { animation: none !important; transition: none !important; }
+  main button { scroll-margin-top: 230px; scroll-margin-bottom: 30px; }
   button:disabled { opacity: .35; cursor: not-allowed; }
   button:disabled.aspect-square { transform: none !important; }
   body { background: #0f172a; color: #f1f5f9; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -41,19 +42,19 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (patrocinadores e ajustes)";
+const VERSAO = "2026-11-13 (rolagem com setas)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
    (O nome do ponto de venda, PDV 01, PDV 02..., continua sendo definido em cada aparelho.) */
 const CONFIG = {
-  apiUrl: "https://furafuradigital.apps-dourado.workers.dev",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
-  pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
-  pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
-  banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
+  apiUrl: "",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
+  pixKey: "",   // chave PIX (usada só no QR Code manual de reserva)
+  pixCity: "",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
+  banner: "",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 8, // segundos que o banner fica na tela
-  premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
-  protecaoSeg: 45, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
+  premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
+  protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
   patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
 };
@@ -520,8 +521,11 @@ function useDpad() {
       }
       const ds = document.querySelectorAll('[role="dialog"]');
       const scope = ds.length ? ds[ds.length - 1] : document;
-      const list = [...scope.querySelectorAll(FOCUSABLE)].filter((el) => vis(el) && !el.hasAttribute("data-nodpad"));
-      if (!list.length) return;
+      // fora das janelas só vale o que está visível na tela; sem nada naquela direção, a página rola
+      const fora = (el) => { const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2; return cx < 0 || cx > window.innerWidth || cy < 0 || cy > window.innerHeight; };
+      const rolar = () => { if (!ds.length && dir[1]) { window.scrollBy(0, dir[1] * Math.round(window.innerHeight * 0.6)); e.preventDefault(); return true; } return false; };
+      const list = [...scope.querySelectorAll(FOCUSABLE)].filter((el) => vis(el) && !el.hasAttribute("data-nodpad") && (ds.length || el === a || !fora(el)));
+      if (!list.length) { rolar(); return; }
       let next = null;
       if (!a || a === document.body || !list.includes(a)) next = list[0];
       else {
@@ -536,10 +540,10 @@ function useDpad() {
           if (score < best) { best = score; next = c; }
         }
       }
-      if (!next) { if (ds.length) e.preventDefault(); return; }
+      if (!next) { if (ds.length) e.preventDefault(); else rolar(); return; }
       e.preventDefault();
       next.focus({ preventScroll: true });
-      next.scrollIntoView({ block: "center", inline: "nearest" });
+      next.scrollIntoView({ block: ds.length ? "center" : "nearest", inline: "nearest" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
