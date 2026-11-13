@@ -27,6 +27,7 @@
   .ff-in { animation: ffIn .7s ease-out; }
   @keyframes ffBar { from { width: 0; } to { width: 100%; } }
   .ff-bar { animation: ffBar 10s linear forwards; }
+  body.modal-open main * { animation: none !important; transition: none !important; }
   button:disabled { opacity: .35; cursor: not-allowed; }
   button:disabled.aspect-square { transform: none !important; }
   body { background: #0f172a; color: #f1f5f9; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -40,7 +41,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-12 (configuração padrão)";
+const VERSAO = "2026-11-12 (visual mais leve)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -156,7 +157,7 @@ function Modal({ title, onClose, wide, lock, children }) {
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose, lock]);
-  return html`<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3 backdrop-blur-sm" onClick=${lock ? undefined : onClose}>
+  return html`<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-3" onClick=${lock ? undefined : onClose}>
     <div ref=${ref} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()} className=${"max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-2xl " + (wide ? "max-w-3xl" : "max-w-md")}>${children}</div>
   </div>`;
 }
@@ -537,6 +538,9 @@ function App() {
       .finally(() => setCriando(false));
   }, [pay, g.apiUrl, pendN, cobr ? cobr.id : "", erroCob]);
   const chIds = (g.charges || []).map((c) => c.id).join(",");
+  // com uma janela aberta, pausa as animações da cartela (alivia TV box mais fraca)
+  const janela = !!(list || pay || admin || detail || view !== null);
+  useEffect(() => { document.body.classList.toggle("modal-open", janela); }, [janela]);
   useEffect(() => {
     if (!g.apiUrl || !chIds) return;
     let vivo = true;
@@ -592,7 +596,7 @@ function App() {
   for (let n = 1; n <= TOTAL; n++) cells.push(html`<${Cell} key=${n} n=${n} hole=${g.holes[n]} onPick=${pick} locked=${locked} />`);
 
   return html`<div className="min-h-screen bg-slate-900">
-    <header className="border-b border-slate-800 bg-slate-900/95 px-3 py-3 backdrop-blur sm:px-6" style=${{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30 }}>
+    <header className="border-b border-slate-800 bg-slate-900 px-3 py-3 sm:px-6" style=${{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30 }}>
       <div className="mx-auto flex max-w-[1400px] items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="break-words text-xl font-extrabold leading-tight sm:text-3xl">🎯 ${g.store}</h1>
