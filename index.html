@@ -42,7 +42,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-14 (botão para o rodapé)";
+const VERSAO = "2026-11-14 (configuração do negócio)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -212,7 +212,7 @@ const Cell = memo(function Cell({ n, hole, onPick, locked }) {
     <${PrizeImage} key=${hole.prize.img} src=${hole.prize.img} className="h-5 w-5 sm:h-7 sm:w-7 lg:h-5 lg:w-5 xl:h-6 xl:w-6 rounded-full" />
     <span className="line-clamp-1 w-full px-px text-center text-[8px] font-bold leading-none">${hole.prize.name}</span>
   </button>`;
-  return html`<div role="img" aria-label=${"Número " + n + ": perdeu"} className="flex aspect-square min-h-11 items-center justify-center rounded-lg lg:rounded-md bg-slate-700 text-[9px] sm:text-[10px] font-bold text-slate-400">PERDEU</div>`;
+  return html`<div role="img" aria-label=${"Número " + n + ": tente novamente"} className="flex aspect-square min-h-11 items-center justify-center rounded-lg lg:rounded-md bg-slate-700 px-px text-center text-[7px] font-bold leading-[1.1] tracking-tight text-slate-400 sm:text-[8px] lg:text-[7px]">TENTE<br />NOVAMENTE</div>`;
 });
 
 const inp = "w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500";
