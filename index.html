@@ -42,19 +42,19 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (rolagem com setas)";
+const VERSAO = "2026-11-13 (seleção sem corte)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
    (O nome do ponto de venda, PDV 01, PDV 02..., continua sendo definido em cada aparelho.) */
 const CONFIG = {
   apiUrl: "https://furafuradigital.apps-dourado.workers.dev",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
-  pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
+  pixKey: "ml.ronan@gmal.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 8, // segundos que o banner fica na tela
   premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
-  protecaoSeg: 45, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
+  protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
   patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
 };
@@ -543,7 +543,13 @@ function useDpad() {
       if (!next) { if (ds.length) e.preventDefault(); else rolar(); return; }
       e.preventDefault();
       next.focus({ preventScroll: true });
-      next.scrollIntoView({ block: ds.length ? "center" : "nearest", inline: "nearest" });
+      if (ds.length) next.scrollIntoView({ block: "center", inline: "nearest" });
+      else if (next.closest("header")) window.scrollTo(0, 0);
+      else { // mantém o item inteiro (com a borda amarela) fora de trás do cabeçalho fixo
+        const cab = document.querySelector("header"), hb = cab ? cab.getBoundingClientRect().bottom : 0, r = next.getBoundingClientRect();
+        if (r.top < hb + 28) window.scrollBy(0, r.top - hb - 28);
+        else if (r.bottom > window.innerHeight - 28) window.scrollBy(0, r.bottom - window.innerHeight + 28);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
