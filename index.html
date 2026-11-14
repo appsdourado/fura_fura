@@ -48,13 +48,13 @@ const VERSAO = "2026-11-13 (rolagem com setas)";
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
    (O nome do ponto de venda, PDV 01, PDV 02..., continua sendo definido em cada aparelho.) */
 const CONFIG = {
-  apiUrl: "",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
-  pixKey: "",   // chave PIX (usada só no QR Code manual de reserva)
-  pixCity: "",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
-  banner: "",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
+  apiUrl: "https://furafuradigital.apps-dourado.workers.dev",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
+  pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
+  pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
+  banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 8, // segundos que o banner fica na tela
-  premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
-  protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
+  premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
+  protecaoSeg: 45, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
   patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
 };
