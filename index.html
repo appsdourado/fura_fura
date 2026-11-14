@@ -42,14 +42,14 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-13 (seleção sem corte)";
+const VERSAO = "2026-11-14 (botão para o rodapé)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
    (O nome do ponto de venda, PDV 01, PDV 02..., continua sendo definido em cada aparelho.) */
 const CONFIG = {
   apiUrl: "https://furafuradigital.apps-dourado.workers.dev",   // endereço do servidor (Worker). Ex: "https://fura-fura.sua-conta.workers.dev"
-  pixKey: "ml.ronan@gmal.com",   // chave PIX (usada só no QR Code manual de reserva)
+  pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 8, // segundos que o banner fica na tela
@@ -57,6 +57,7 @@ const CONFIG = {
   protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
   patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
+  patrocinioMin: 15, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
@@ -399,7 +400,7 @@ function AdminPanel({ onClose }) {
 
     <section className="mb-5">
       <${H}>Patrocinadores (proteção de tela)<//>
-      <p className="mb-2 text-xs text-slate-400">Os banners dos patrocinadores entram na proteção de tela depois da rotação dos prêmios, e o ciclo continua. Cada um pode ser trocado ou desativado.</p>
+      <p className="mb-2 text-xs text-slate-400">Com o jogo parado, os banners dos patrocinadores entram na proteção de tela a cada ${CONFIG.patrocinioMin} minutos, um de cada vez, e depois voltam para a cartela. Cada um pode ser trocado ou desativado.</p>
       <button type="button" onClick=${() => actions.setFlag("sponsorBtn", g.sponsorBtn === false)} className=${btn + "mb-3 " + (g.sponsorBtn === false ? "bg-red-700 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-500")}>Botão JOGAR nos patrocinadores: ${g.sponsorBtn === false ? "DESABILITADO" : "HABILITADO"}</button>
       ${sp.map((x, i) => html`<div key=${i} className="mb-3 rounded-lg border border-slate-700 bg-slate-900 p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
@@ -575,7 +576,7 @@ function App() {
   const [pay, setPay] = useState(false);
   const closePay = useCallback(() => setPay(false), []);
   // proteção de tela: banner ao abrir o jogo e, depois de 2 min sem jogar, banner + prêmios em rotação
-  const [sv, setSv] = useState(() => { const s0 = snap(); return (s0.bannerOn !== false && s0.banner) ? { inicio: true } : null; });
+  const [sv, setSv] = useState(() => { const s0 = snap(); return (s0.bannerOn !== false && s0.banner) ? { modo: "inicio" } : null; });
   const [svIdx, setSvIdx] = useState(0);
   const [idleTick, setIdleTick] = useState(0);
   const closeDetail = useCallback(() => setDetail(null), []);
@@ -620,26 +621,45 @@ function App() {
   const janela = !!(list || pay || admin || detail || view !== null);
   useEffect(() => { document.body.classList.toggle("modal-open", janela || !!sv); }, [janela, sv]);
   const bannerOn = g.bannerOn !== false && !!g.banner;
-  const slides = [];
-  if (bannerOn) slides.push({ tipo: "banner" });
-  disp.forEach((p) => slides.push({ tipo: "premio", p }));
-  (g.sponsors || []).forEach((x, i) => { if (x.on !== false && x.img) slides.push({ tipo: "patro", img: x.img, n: i + 1 }); });
-  const cur2 = !sv ? null : sv.inicio ? (bannerOn ? { tipo: "banner" } : null) : (slides.length ? slides[svIdx % slides.length] : null);
+  const jogoSlides = [];
+  if (bannerOn) jogoSlides.push({ tipo: "banner" });
+  disp.forEach((p) => jogoSlides.push({ tipo: "premio", p }));
+  const patroSlides = [];
+  (g.sponsors || []).forEach((x, i) => { if (x.on !== false && x.img) patroSlides.push({ tipo: "patro", img: x.img, n: i + 1 }); });
+  const slides = !sv ? [] : sv.modo === "inicio" ? (bannerOn ? [{ tipo: "banner" }] : []) : sv.modo === "patro" ? patroSlides : jogoSlides;
+  const cur2 = slides.length ? slides[svIdx % slides.length] : null;
+  const lastSp = useRef(Date.now()); // última vez que os patrocinadores apareceram
   useEffect(() => {
     if (!sv) return;
-    if (!cur2) { setSv(null); return; }
+    if (!cur2) { if (sv.modo === "patro") lastSp.current = Date.now(); setSv(null); return; }
     const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : cur2.tipo === "patro" ? Math.max(1, g.sponsorSec || 8) : CONFIG.premioSeg) * 1000;
-    const t = setTimeout(() => { if (sv.inicio) setSv(null); else setSvIdx((i) => (i + 1) % Math.max(1, slides.length)); }, ms);
+    const t = setTimeout(() => {
+      if (sv.modo === "inicio") setSv(null);
+      else if (sv.modo === "patro") { if (svIdx + 1 >= slides.length) { lastSp.current = Date.now(); setSv(null); } else setSvIdx(svIdx + 1); }
+      else setSvIdx((i) => (i + 1) % Math.max(1, slides.length));
+    }, ms);
     return () => clearTimeout(t);
   }, [sv, svIdx, slides.length, g.bannerSec, g.sponsorSec, bannerOn]);
   useEffect(() => {
-    if (sv || janela || slides.length === 0) return;
-    const t = setTimeout(() => { setSvIdx(0); setSv({ inicio: false }); }, CONFIG.protecaoSeg * 1000);
+    if (janela) return;
+    const intervalo = CONFIG.patrocinioMin * 60000;
+    let t;
+    if (sv) {
+      // na proteção do jogo: chegando a hora, troca para os patrocinadores
+      if (sv.modo === "jogo" && patroSlides.length > 0) t = setTimeout(() => { setSvIdx(0); setSv({ modo: "patro" }); }, Math.max(0, lastSp.current + intervalo - Date.now()));
+      return () => clearTimeout(t);
+    }
+    // na cartela: depois do tempo sem jogar entra a proteção (patrocinadores se já deu a hora; senão, a do jogo)
+    t = setTimeout(() => {
+      setSvIdx(0);
+      if (patroSlides.length > 0 && Date.now() - lastSp.current >= intervalo) setSv({ modo: "patro" });
+      else if (jogoSlides.length > 0) setSv({ modo: "jogo" });
+    }, CONFIG.protecaoSeg * 1000);
     const bump = () => setIdleTick((x) => x + 1);
     const evs = ["pointerdown", "keydown", "touchstart", "wheel"];
     evs.forEach((ev) => window.addEventListener(ev, bump, { passive: true }));
     return () => { clearTimeout(t); evs.forEach((ev) => window.removeEventListener(ev, bump)); };
-  }, [sv, janela, idleTick, slides.length]);
+  }, [sv, janela, idleTick, jogoSlides.length, patroSlides.length]);
   useEffect(() => {
     if (!g.apiUrl || !chIds) return;
     let vivo = true;
@@ -702,6 +722,7 @@ function App() {
           <p className="text-sm font-semibold text-amber-300 sm:text-base">${brl(g.price)} por furo</p>
         </div>
         <button type="button" onClick=${() => setList(true)} className="flex shrink-0 items-center gap-2 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-slate-900 shadow hover:bg-amber-300"><span aria-hidden="true">🎁</span><span>Ver prêmios</span></button>
+        <button type="button" tabIndex="-1" data-nodpad="1" aria-label="Ir para o rodapé" title="Ir para o rodapé" onClick=${(e) => { if (e.detail === 0) return; e.currentTarget.blur(); window.scrollTo(0, document.documentElement.scrollHeight); }} className="shrink-0 rounded-md border border-slate-700 px-2 py-2 text-xs text-slate-400 opacity-60 hover:opacity-100">⬇</button>
         
       </div>
       <div className="mx-auto mt-3 grid max-w-[1400px] grid-cols-4 gap-1.5 sm:gap-2">
@@ -734,6 +755,7 @@ function App() {
     <footer className="pb-6 text-center text-xs text-slate-500">
       <div>Nº de série: ${SERIAL} · Versão ${VERSAO}</div>
       <button type="button" tabIndex="-1" data-nodpad="1" aria-label="Área do Administrador" onClick=${(e) => { if (e.detail === 0) return; e.currentTarget.blur(); setAdmin(true); }} className="mt-3 rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-200">⚙️ Área do Administrador</button>
+      <button type="button" tabIndex="-1" data-nodpad="1" aria-label="Voltar ao topo" title="Voltar ao topo" onClick=${(e) => { if (e.detail === 0) return; e.currentTarget.blur(); window.scrollTo(0, 0); }} className="ml-2 mt-3 rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-200">⬆ Topo</button>
     </footer>
 
     ${view !== null && win && html`<${Modal} title="Número premiado!" onClose=${closeView}>
@@ -827,17 +849,21 @@ function App() {
     ${admin && html`<${AdminPanel} onClose=${closeAdmin} />`}
 
     ${sv && cur2 && html`<div role="dialog" aria-modal="true" aria-label="Proteção de tela" className="fixed inset-0 z-[80] flex flex-col bg-slate-950">
-      <div key=${svIdx + (sv.inicio ? "i" : "c")} className="ff-in relative flex min-h-0 flex-1 flex-col items-center justify-center p-3 text-center">
+      <div key=${svIdx + sv.modo} className="ff-in relative flex min-h-0 flex-1 flex-col items-center justify-center p-3 text-center">
         ${cur2.tipo === "banner"
-          ? html`<img src=${resolveImg(g.banner)} alt="Banner" onError=${() => { if (sv.inicio) setSv(null); }} className="absolute inset-0 h-full w-full object-contain" />`
+          ? html`<img src=${resolveImg(g.banner)} alt="Banner" onError=${() => { if (sv.modo === "inicio") setSv(null); }} className="absolute inset-0 h-full w-full object-contain" />`
           : cur2.tipo === "patro"
-          ? html`<img src=${resolveImg(cur2.img)} alt=${"Patrocinador " + cur2.n} className="absolute inset-0 h-full w-full object-contain" />`
-          : html`<h2 className="mb-3 text-2xl font-extrabold text-amber-300 sm:text-4xl">🎁 Prêmios em jogo</h2>
-            <${PrizeImage} key=${cur2.p.img} src=${cur2.p.img} className="h-[46vh] w-[46vh] rounded-3xl text-8xl" />
+          ? html`<div className="absolute inset-0 flex flex-col">
+              <p className="shrink-0 py-2 text-center text-2xl font-extrabold text-amber-300 sm:text-4xl">VISITE NOSSO ANUNCIANTE</p>
+              <div className="relative min-h-0 flex-1"><img src=${resolveImg(cur2.img)} alt=${"Patrocinador " + cur2.n} className="absolute inset-0 h-full w-full object-contain" /></div>
+            </div>`
+          : html`<p className="mb-2 text-xl font-extrabold text-emerald-300 sm:text-3xl">CLIQUE EM JOGAR, ESCOLHA SEU NÚMERO, CONCORRA E GANHE</p>
+            <h2 className="mb-3 text-2xl font-extrabold text-amber-300 sm:text-4xl">🎁 Prêmios em jogo</h2>
+            <${PrizeImage} key=${cur2.p.img} src=${cur2.p.img} className="h-[36vh] w-[36vh] rounded-3xl text-8xl" />
             <p className="mt-4 text-4xl font-extrabold sm:text-6xl">${cur2.p.name}</p>`}
       </div>
       ${!(cur2.tipo === "patro" && g.sponsorBtn === false) && html`<div className="flex justify-center p-2">
-        <button type="button" autoFocus=${true} onClick=${() => setSv(null)} className="rounded-xl bg-emerald-500 px-10 py-2 text-xl font-extrabold text-slate-900 shadow-2xl hover:bg-emerald-400">JOGAR</button>
+        <button type="button" autoFocus=${true} onClick=${() => { if (sv.modo === "patro") lastSp.current = Date.now(); setSv(null); }} className="rounded-xl bg-emerald-500 px-10 py-2 text-xl font-extrabold text-slate-900 shadow-2xl hover:bg-emerald-400">JOGAR</button>
       </div>`}
     </div>`}
   </div>`;
