@@ -42,7 +42,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-15 (cobrança manual)";
+const VERSAO = "2026-11-15 (pagar só com crédito)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -52,7 +52,7 @@ const CONFIG = {
   pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
-  bannerSeg: 10, // segundos que o banner fica na tela
+  bannerSeg: 8, // segundos que o banner fica na tela
   premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
   protecaoSeg: 30, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
@@ -614,6 +614,7 @@ function App() {
     <button type="button" onClick=${() => setCobManual(true)} className="mt-3 rounded-xl bg-amber-400 px-6 py-3 font-bold text-slate-900 hover:bg-amber-300">Cobrar manualmente</button>
   </div>`;
   useEffect(() => { if (!pay) { setErroCob(""); setCobManual(false); } }, [pay]);
+  useEffect(() => { if (pay && pendN === 0) setPay(false); }, [pay, pendN]); // tempo esgotado ou pagamento feito: volta direto para a cartela
   useEffect(() => {
     if (!pay || !g.apiUrl || pendN === 0 || cobr || criando || erroCob) return;
     setCriando(true);
@@ -746,7 +747,7 @@ function App() {
         </div>
         <div className="flex shrink-0 gap-2">
           <button type="button" onClick=${() => actions.addCredit()} className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-400 sm:text-sm"><span className="sm:hidden">➕ Crédito</span><span className="hidden sm:inline">➕ Adicionar crédito</span></button>
-          <button type="button" onClick=${() => setPay(true)} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-amber-300 sm:text-sm">💲 Pagar</button>
+          <button type="button" disabled=${(g.pend || 0) === 0} onClick=${() => setPay(true)} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-amber-300 sm:text-sm">💲 Pagar</button>
         </div>
       </div>
     </header>
