@@ -42,7 +42,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-14 (configuração do negócio)";
+const VERSAO = "2026-11-15 (cobrança manual)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -52,12 +52,13 @@ const CONFIG = {
   pixKey: "ml.ronan@gmail.com",   // chave PIX (usada só no QR Code manual de reserva)
   pixCity: "Sao Mateus ES",  // cidade do recebedor, sem acento, até 15 letras. Ex: "Vitoria"
   banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
-  bannerSeg: 8, // segundos que o banner fica na tela
+  bannerSeg: 10, // segundos que o banner fica na tela
   premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
   protecaoSeg: 30, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
   patrocinioSeg: 15, // segundos que cada banner de patrocinador fica na tela
   patrocinioMin: 5, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
+  falhaSeg: 120, // segundos esperando o pagamento automático antes de avisar "falha, chame o atendente"
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
@@ -606,14 +607,20 @@ function App() {
   const [criando, setCriando] = useState(false);
   const [erroCob, setErroCob] = useState("");
   const [aviso, setAviso] = useState("");
-  useEffect(() => { if (!pay) setErroCob(""); }, [pay]);
+  const [cobManual, setCobManual] = useState(false);
+  const esperou = !!cobr && (now - (cobr.at || now)) >= CONFIG.falhaSeg * 1000;
+  const falhaBloco = html`<div className="mt-3">
+    <p className="text-lg font-extrabold text-red-300">Houve uma falha na cobrança automática. Chame o atendente para realizar sua cobrança manualmente.</p>
+    <button type="button" onClick=${() => setCobManual(true)} className="mt-3 rounded-xl bg-amber-400 px-6 py-3 font-bold text-slate-900 hover:bg-amber-300">Cobrar manualmente</button>
+  </div>`;
+  useEffect(() => { if (!pay) { setErroCob(""); setCobManual(false); } }, [pay]);
   useEffect(() => {
     if (!pay || !g.apiUrl || pendN === 0 || cobr || criando || erroCob) return;
     setCriando(true);
     fetch(g.apiUrl + "/cobrar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valor: valorPend, creditos: pendN, pdv: g.pixDesc || "", loja: g.store }) })
       .then((r) => r.json().then((j) => { if (!r.ok || !j.qr_code) throw new Error(j.erro || "erro " + r.status); return j; }))
-      .then((j) => actions.addCharge({ id: String(j.id), creditos: pendN, valor: valorPend, code: j.qr_code, b64: j.qr_base64, exp: j.exp }))
-      .catch((e) => setErroCob(e.message || "falha"))
+      .then((j) => actions.addCharge({ id: String(j.id), creditos: pendN, valor: valorPend, code: j.qr_code, b64: j.qr_base64, exp: j.exp, at: Date.now() }))
+      .catch((e) => { console.warn("cobrança automática:", e); setErroCob(e.message || "falha"); })
       .finally(() => setCriando(false));
   }, [pay, g.apiUrl, pendN, cobr ? cobr.id : "", erroCob]);
   const chIds = (g.charges || []).map((c) => c.id).join(",");
@@ -685,7 +692,7 @@ function App() {
     const t = setInterval(tick, 3000);
     return () => { vivo = false; clearInterval(t); };
   }, [g.apiUrl, chIds]);
-  const payloadPix = (g.pixKey && pendN > 0 && (!g.apiUrl || erroCob)) ? pixPayload(g.pixKey, pendN * g.price, g.store, g.pixCity, g.pixDesc) : "";
+  const payloadPix = (g.pixKey && pendN > 0 && (!g.apiUrl || cobManual)) ? pixPayload(g.pixKey, pendN * g.price, g.store, g.pixCity, g.pixDesc) : "";
   const [copiado, setCopiado] = useState("");
   const copiar = async (t) => {
     try { await navigator.clipboard.writeText(t); setCopiado("Copiado!"); } catch (e) { setCopiado("Não foi possível copiar."); }
@@ -804,20 +811,19 @@ function App() {
             <button type="button" onClick=${() => copiar(payloadPix)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">📋 Copiar código PIX (copia e cola)</button>
             ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}`
           : (g.pixQr ? html`<${QrImg} key=${g.pixQr} src=${g.pixQr} />` : null)}
-        ${(g.apiUrl && !erroCob && pendN > 0)
-          ? (cobr
+        ${(g.apiUrl && !cobManual && pendN > 0)
+          ? (erroCob ? falhaBloco : cobr
             ? html`<img src=${"data:image/png;base64," + cobr.b64} alt="QR Code PIX" className="mx-auto my-3 h-[34vh] min-h-[12rem] w-[34vh] min-w-[12rem] rounded-xl bg-white p-1" />
               <button type="button" onClick=${() => copiar(cobr.code)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">📋 Copiar código PIX (copia e cola)</button>
               ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}
-              <p className="mt-3 animate-pulse text-lg font-extrabold text-amber-300">⏳ Aguardando o pagamento… os créditos são liberados sozinhos</p>`
+              ${esperou ? falhaBloco : html`<p className="mt-3 animate-pulse text-lg font-extrabold text-amber-300">⏳ Aguardando o pagamento… os créditos serão liberados automaticamente</p>`}`
             : html`<p className="my-6 animate-pulse text-lg font-bold">Gerando a cobrança…</p>`)
           : g.pixKey
           ? html`<p className="mt-3 text-xs uppercase text-slate-400">Chave PIX</p><p className="break-all text-xl font-extrabold">${g.pixKey}</p>`
           : html`<p className="mt-3 text-sm font-semibold text-red-300">Chave PIX não cadastrada. Cadastre na Área do Administrador.</p>`}
-        ${g.apiUrl && erroCob && html`<p className="mt-3 text-sm font-semibold text-red-300">Não foi possível gerar a cobrança automática (${erroCob}). Use o QR manual e confirme o pagamento.</p><button type="button" onClick=${() => setErroCob("")} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">🔄 Tentar de novo</button>`}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick=${closePay} className="rounded-xl bg-slate-600 px-5 py-3 font-bold hover:bg-slate-500">${(g.pend || 0) > 0 ? "Cancelar" : "Fechar"}</button>
-          ${(g.pend || 0) > 0 && g.confirmBtn !== false && html`<button type="button" onClick=${() => { actions.confirmPay(); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Confirmar pagamento</button>`}
+          ${(g.pend || 0) > 0 && g.confirmBtn !== false && (!g.apiUrl || cobManual) && html`<button type="button" onClick=${() => { actions.confirmPay(); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Confirmar pagamento</button>`}
         </div>
       </div>
     <//>`}
