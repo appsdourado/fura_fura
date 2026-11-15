@@ -42,7 +42,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-15 (um QR por vez)";
+const VERSAO = "2026-11-15 (falha só quando falha)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -58,7 +58,6 @@ const CONFIG = {
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
   patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
   patrocinioMin: 15, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
-  falhaSeg: 120, // segundos esperando o pagamento automático antes de avisar "falha, chame o atendente"
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
@@ -608,14 +607,16 @@ function App() {
   const [erroCob, setErroCob] = useState("");
   const [aviso, setAviso] = useState("");
   const [cobManual, setCobManual] = useState(false);
-  const [payAt, setPayAt] = useState(0); // quando a janela de pagamento foi aberta
-  useEffect(() => { if (pay) setPayAt(Date.now()); }, [pay]);
-  const esperou = !!cobr && payAt > 0 && (now - Math.max(payAt, cobr.at || 0)) >= CONFIG.falhaSeg * 1000;
+  const [falhaId, setFalhaId] = useState(""); // cobrança com falha na confirmação (paga e não reconhecida, cancelada ou sem resposta do servidor)
+  const errosPoll = useRef(0);
+  const falhaCob = !!cobr && falhaId === cobr.id;
   const falhaBloco = html`<div className="mt-3">
     <p className="text-lg font-extrabold text-red-300">Houve uma falha na cobrança automática. Chame o atendente para realizar sua cobrança manualmente.</p>
     <button type="button" onClick=${() => setCobManual(true)} className="mt-3 rounded-xl bg-amber-400 px-6 py-3 font-bold text-slate-900 hover:bg-amber-300">Cobrar manualmente</button>
   </div>`;
-  useEffect(() => { if (!pay) { setErroCob(""); setCobManual(false); } }, [pay]);
+  useEffect(() => {
+    if (!pay) { setErroCob(""); setCobManual(false); if (falhaId) { actions.dropCharge(falhaId); setFalhaId(""); } }
+  }, [pay, falhaId]);
   useEffect(() => { if (pay && pendN === 0) setPay(false); }, [pay, pendN]); // tempo esgotado ou pagamento feito: volta direto para a cartela
   useEffect(() => {
     if (!pay || !g.apiUrl || pendN === 0 || cobr || criando || erroCob) return;
@@ -680,15 +681,19 @@ function App() {
           const r = await fetch(g.apiUrl + "/status?id=" + encodeURIComponent(c.id));
           const j = await r.json();
           if (!vivo) return;
-          if (j.status === "approved" && Math.abs(j.valor - c.valor) < 0.005) {
-            if (!(snap().usadas || []).includes(c.id)) {
-              actions.releaseCharge(c.id);
-              setAviso(c.creditos + " crédito(s) liberado(s)! Pagamento aprovado.");
-              setPay(false);
-              setTimeout(() => setAviso(""), 6000);
-            }
-          } else if (["cancelled", "rejected"].includes(j.status)) actions.dropCharge(c.id);
-        } catch (e) {}
+          if (!r.ok) throw new Error("status " + r.status);
+          errosPoll.current = 0;
+          if (j.status === "approved") {
+            if (Math.abs(j.valor - c.valor) < 0.005) {
+              if (!(snap().usadas || []).includes(c.id)) {
+                actions.releaseCharge(c.id);
+                setAviso(c.creditos + " crédito(s) liberado(s)! Pagamento aprovado.");
+                setPay(false);
+                setTimeout(() => setAviso(""), 6000);
+              }
+            } else setFalhaId(c.id); // pago, mas com valor diferente: não reconhecido
+          } else if (["cancelled", "rejected"].includes(j.status)) setFalhaId(c.id);
+        } catch (e) { errosPoll.current++; if (errosPoll.current >= 5) setFalhaId(c.id); }
       }
     };
     tick();
@@ -815,11 +820,11 @@ function App() {
             ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}`
           : ((!g.apiUrl || cobManual) && g.pixQr ? html`<${QrImg} key=${g.pixQr} src=${g.pixQr} />` : null)}
         ${(g.apiUrl && !cobManual && pendN > 0)
-          ? (erroCob ? falhaBloco : cobr
+          ? ((erroCob || falhaCob) ? falhaBloco : cobr
             ? html`<img src=${"data:image/png;base64," + cobr.b64} alt="QR Code PIX" className="mx-auto my-3 h-[34vh] min-h-[12rem] w-[34vh] min-w-[12rem] rounded-xl bg-white p-1" />
               <button type="button" onClick=${() => copiar(cobr.code)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">📋 Copiar código PIX (copia e cola)</button>
               ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}
-              ${esperou ? falhaBloco : html`<p className="mt-3 animate-pulse text-lg font-extrabold text-amber-300">⏳ Aguardando o pagamento… os créditos serão liberados automaticamente</p>`}`
+              <p className="mt-3 animate-pulse text-lg font-extrabold text-amber-300">⏳ Aguardando o pagamento… os créditos serão liberados automaticamente</p>`
             : html`<p className="my-6 animate-pulse text-lg font-bold">Gerando a cobrança…</p>`)
           : g.pixKey
           ? html`<p className="mt-3 text-xs uppercase text-slate-400">Chave PIX</p><p className="break-all text-xl font-extrabold">${g.pixKey}</p>`
