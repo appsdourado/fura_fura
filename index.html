@@ -42,7 +42,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-15 (pagar só com crédito)";
+const VERSAO = "2026-11-15 (um QR por vez)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -54,10 +54,10 @@ const CONFIG = {
   banner: "bannerhoriz.jpg",   // imagem do banner: nome do arquivo na pasta premios. Ex: "banner.jpg"
   bannerSeg: 8, // segundos que o banner fica na tela
   premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
-  protecaoSeg: 30, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
+  protecaoSeg: 60, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
-  patrocinioSeg: 15, // segundos que cada banner de patrocinador fica na tela
-  patrocinioMin: 5, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
+  patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
+  patrocinioMin: 15, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
   falhaSeg: 120, // segundos esperando o pagamento automático antes de avisar "falha, chame o atendente"
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
@@ -608,7 +608,9 @@ function App() {
   const [erroCob, setErroCob] = useState("");
   const [aviso, setAviso] = useState("");
   const [cobManual, setCobManual] = useState(false);
-  const esperou = !!cobr && (now - (cobr.at || now)) >= CONFIG.falhaSeg * 1000;
+  const [payAt, setPayAt] = useState(0); // quando a janela de pagamento foi aberta
+  useEffect(() => { if (pay) setPayAt(Date.now()); }, [pay]);
+  const esperou = !!cobr && payAt > 0 && (now - Math.max(payAt, cobr.at || 0)) >= CONFIG.falhaSeg * 1000;
   const falhaBloco = html`<div className="mt-3">
     <p className="text-lg font-extrabold text-red-300">Houve uma falha na cobrança automática. Chame o atendente para realizar sua cobrança manualmente.</p>
     <button type="button" onClick=${() => setCobManual(true)} className="mt-3 rounded-xl bg-amber-400 px-6 py-3 font-bold text-slate-900 hover:bg-amber-300">Cobrar manualmente</button>
@@ -811,7 +813,7 @@ function App() {
           ? html`<${PixQr} key=${payloadPix} payload=${payloadPix} fallback=${g.pixQr} />
             <button type="button" onClick=${() => copiar(payloadPix)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600">📋 Copiar código PIX (copia e cola)</button>
             ${copiado && html`<p className="mt-1 text-sm font-semibold text-emerald-300">${copiado}</p>`}`
-          : (g.pixQr ? html`<${QrImg} key=${g.pixQr} src=${g.pixQr} />` : null)}
+          : ((!g.apiUrl || cobManual) && g.pixQr ? html`<${QrImg} key=${g.pixQr} src=${g.pixQr} />` : null)}
         ${(g.apiUrl && !cobManual && pendN > 0)
           ? (erroCob ? falhaBloco : cobr
             ? html`<img src=${"data:image/png;base64," + cobr.b64} alt="QR Code PIX" className="mx-auto my-3 h-[34vh] min-h-[12rem] w-[34vh] min-w-[12rem] rounded-xl bg-white p-1" />
