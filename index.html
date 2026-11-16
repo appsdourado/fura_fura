@@ -42,7 +42,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-16 (cobranças manuais registradas)";
+const VERSAO = "2026-11-16 (hora, clima e câmbio)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -56,21 +56,25 @@ const CONFIG = {
   premioSeg: 4, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
   protecaoSeg: 30, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
-  patrocinioSeg: 8, // segundos que cada banner de patrocinador fica na tela
-  patrocinioMin: 15, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
+  patrocinioSeg: 15, // segundos que cada banner de patrocinador fica na tela
+  patrocinioMin: 5, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
+  infoSeg: 20, // segundos da tela de hora, clima e câmbio, que entra antes dos patrocinadores
+  infoLocal: "Sao Mateus ES", // local da previsão do tempo quando o aparelho não informa a localização. Ex: "Vitoria ES" ou "-18.72,-39.86"
 };
 const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS = "admin123";
 // nome curto (ex: tv.jpg) vira premios/tv.jpg; links http(s) e fotos enviadas ficam como estão
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
-const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, sponsors: [0, 1, 2, 3].map((i) => ({ img: CONFIG.patrocinadores[i] || "", on: true })), sponsorSec: CONFIG.patrocinioSeg, manual: 0, sponsorBtn: true, confirmBtn: true, manuals: [], apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, sponsors: [0, 1, 2, 3].map((i) => ({ img: CONFIG.patrocinadores[i] || "", on: true })), sponsorSec: CONFIG.patrocinioSeg, manual: 0, sponsorBtn: true, confirmBtn: true, manuals: [], infoOn: true, infoSec: CONFIG.infoSeg, infoLocal: CONFIG.infoLocal, infoGeo: true, apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
 const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d };
       for (const k of ["apiUrl", "pixKey", "pixCity", "banner"]) if (!s[k]) s[k] = CONFIG[k]; // aparelho sem valor salvo usa o padrão
       if (!s.bannerSec) s.bannerSec = CONFIG.bannerSeg;
       const sp0 = Array.isArray(s.sponsors) ? s.sponsors : [];
       s.sponsors = [0, 1, 2, 3].map((i) => { const x = sp0[i] || {}; return { img: x.img || CONFIG.patrocinadores[i] || "", on: x.on !== false }; });
       if (!s.sponsorSec) s.sponsorSec = CONFIG.patrocinioSeg;
+      if (!s.infoSec) s.infoSec = CONFIG.infoSeg;
+      if (!s.infoLocal) s.infoLocal = CONFIG.infoLocal;
       s.apiUrl = (s.apiUrl || "").replace(/\/+$/, ""); if (!d.seeded) { s.seeded = true; if (!d.prizes || !Object.keys(d.prizes).length) s.prizes = seed(); } return s; } } catch (e) {} return init(); };
 const rd = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const FORMAS = { dinheiro: "Dinheiro", pix_atendente: "PIX do atendente", pix_loja: "PIX da loja" };
@@ -141,6 +145,7 @@ const actions = {
   saveBanner(on, img, sec) { update((s) => ({ ...s, bannerOn: !!on, banner: resolveImg(img), bannerSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
   saveSponsors(list, sec) { update((s) => ({ ...s, sponsors: list.slice(0, 4).map((x) => ({ img: resolveImg(x.img), on: !!x.on })), sponsorSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
   setFlag(k, v) { if (["sponsorBtn", "confirmBtn"].includes(k)) update((s) => ({ ...s, [k]: !!v })); },
+  saveInfo(on, sec, local, geo) { update((s) => ({ ...s, infoOn: !!on, infoSec: Math.min(120, Math.max(5, parseInt(sec, 10) || 20)), infoLocal: (local || "").trim(), infoGeo: !!geo })); },
   saveApi(url) { update((s) => ({ ...s, apiUrl: (url || "").trim().replace(/\/+$/, "") })); },
   addCharge(c) { update((s) => ({ ...s, charges: [...(s.charges || []), c].slice(-5) })); },
   dropCharge(id) { update((s) => ({ ...s, charges: (s.charges || []).filter((x) => x.id !== id) })); },
@@ -153,7 +158,7 @@ const actions = {
     });
   },
   saveConfig(store, price) { update((s) => ({ ...s, store: store.trim() || s.store, price })); },
-  reset() { update((s) => ({ ...s, holes: {}, current: 0, paid: 0, pend: 0, pendSince: 0, manual: 0 })); },
+  reset(limpaLoja) { update((s) => ({ ...s, holes: {}, current: 0, paid: 0, pend: 0, pendSince: 0, manual: 0, manuals: limpaLoja ? (s.manuals || []).filter((m) => m.forma !== "pix_loja") : (s.manuals || []) })); },
   async checkPass(p) { const s = snap(); return s.passHash ? (await sha256(p)) === s.passHash : p === DEF_PASS; },
   async changePass(cur, next, conf) {
     if (!(await actions.checkPass(cur))) return "Senha atual incorreta.";
@@ -262,6 +267,91 @@ function QrImg({ src }) {
   return html`<img src=${resolveImg(src)} alt="QR Code PIX" onError=${() => setBad(true)} className="mx-auto my-3 h-[34vh] min-h-[12rem] w-[34vh] min-w-[12rem] rounded-xl bg-white object-contain p-2" />`;
 }
 
+/* ===== tela de utilidade pública: hora, clima e câmbio ===== */
+const UF = { AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais", PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte", RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins" };
+const sem = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const WMO = (c) => c === 0 ? ["Céu limpo", "☀️"] : c <= 2 ? ["Parcialmente nublado", "⛅"] : c === 3 ? ["Nublado", "☁️"] : c <= 48 ? ["Neblina", "🌫️"] : c <= 57 ? ["Garoa", "🌦️"] : c <= 67 ? ["Chuva", "🌧️"] : c <= 77 ? ["Neve", "❄️"] : c <= 82 ? ["Pancadas de chuva", "🌧️"] : c <= 86 ? ["Neve", "❄️"] : ["Tempestade", "⛈️"];
+async function pegarCoord(g) {
+  // 1) localização do aparelho (se permitida); 2) local configurado no painel
+  if (g.infoGeo !== false && typeof navigator !== "undefined" && navigator.geolocation) {
+    try {
+      const p = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { timeout: 8000, maximumAge: 3600000 }));
+      return { lat: p.coords.latitude, lon: p.coords.longitude, nome: "Sua região" };
+    } catch (e) {}
+  }
+  const txt = (g.infoLocal || "").trim();
+  const m = txt.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if (m) return { lat: +m[1], lon: +m[2], nome: "Local configurado" };
+  const partes = txt.replace(",", " ").split(/\s+/).filter(Boolean);
+  const uf = partes.length > 1 && /^[A-Za-z]{2}$/.test(partes[partes.length - 1]) ? partes.pop().toUpperCase() : "";
+  const j = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(partes.join(" ")) + "&count=10&language=pt&format=json")).json();
+  const res = j.results || [];
+  const alvo = res.find((x) => x.country_code === "BR" && (!uf || sem(x.admin1) === sem(UF[uf]))) || res[0];
+  if (!alvo) throw new Error("local não encontrado");
+  return { lat: alvo.latitude, lon: alvo.longitude, nome: alvo.name + (alvo.admin1 ? " - " + alvo.admin1 : "") };
+}
+async function carregarInfo(g) {
+  const r = { clima: null, cambio: null };
+  try {
+    const c = await pegarCoord(g);
+    const w = await (await fetch("https://api.open-meteo.com/v1/forecast?latitude=" + c.lat + "&longitude=" + c.lon + "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1")).json();
+    r.clima = { local: c.nome, temp: w.current.temperature_2m, cod: w.current.weather_code, max: w.daily.temperature_2m_max[0], min: w.daily.temperature_2m_min[0] };
+  } catch (e) { console.warn("clima:", e); }
+  try {
+    const j = await (await fetch("https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL")).json();
+    r.cambio = { usd: parseFloat(j.USDBRL.bid), eur: parseFloat(j.EURBRL.bid), pu: parseFloat(j.USDBRL.pctChange), pe: parseFloat(j.EURBRL.pctChange) };
+  } catch (e) { console.warn("câmbio:", e); }
+  return r;
+}
+const infoCache = { t: 0, k: "", d: null };
+function InfoTela({ g }) {
+  const [agora, setAgora] = useState(new Date());
+  const [d, setD] = useState(infoCache.d);
+  useEffect(() => { const t = setInterval(() => setAgora(new Date()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    let vivo = true;
+    const k = (g.infoGeo !== false ? "g" : "n") + "|" + (g.infoLocal || "");
+    if (infoCache.d && infoCache.k === k && Date.now() - infoCache.t < 600000) { setD(infoCache.d); return; }
+    carregarInfo(g).then((r) => { if (r.clima || r.cambio) { infoCache.d = r; infoCache.t = Date.now(); infoCache.k = k; } if (vivo) setD(r); });
+    return () => { vivo = false; };
+  }, []);
+  const hh = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const dia = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const cx = "rounded-2xl border border-slate-700 bg-slate-800 p-4";
+  const [desc, ico] = d && d.clima ? WMO(d.clima.cod) : ["", ""];
+  const seta = (v) => (v >= 0 ? "▲ " : "▼ ") + Math.abs(v).toFixed(2) + "%";
+  return html`<div className="flex w-full max-w-5xl flex-col items-center gap-4">
+    <div>
+      <div className="text-7xl font-extrabold tabular-nums sm:text-9xl">${hh}</div>
+      <div className="mt-1 text-xl font-semibold text-slate-300 sm:text-3xl">${dia}</div>
+    </div>
+    <div className="grid w-full gap-3 sm:grid-cols-3">
+      <div className=${cx}>
+        <div className="text-xs font-bold uppercase text-sky-300">Previsão do tempo</div>
+        ${!d ? html`<div className="mt-2 animate-pulse text-lg">Carregando…</div>` : d.clima
+          ? html`<div className="mt-1 text-5xl font-extrabold">${ico} ${Math.round(d.clima.temp)}°C</div>
+            <div className="text-lg font-semibold">${desc}</div>
+            <div className="text-sm text-slate-300">Máx ${Math.round(d.clima.max)}° · Mín ${Math.round(d.clima.min)}°</div>
+            <div className="mt-1 text-xs text-slate-400">${d.clima.local}</div>`
+          : html`<div className="mt-2 text-lg text-slate-400">Indisponível no momento</div>`}
+      </div>
+      <div className=${cx}>
+        <div className="text-xs font-bold uppercase text-emerald-300">💵 Dólar</div>
+        ${!d ? html`<div className="mt-2 animate-pulse text-lg">Carregando…</div>` : d.cambio
+          ? html`<div className="mt-1 text-5xl font-extrabold">${brl(d.cambio.usd)}</div><div className="text-sm text-slate-300">${seta(d.cambio.pu)} no dia</div>`
+          : html`<div className="mt-2 text-lg text-slate-400">Indisponível no momento</div>`}
+      </div>
+      <div className=${cx}>
+        <div className="text-xs font-bold uppercase text-amber-300">💶 Euro</div>
+        ${!d ? html`<div className="mt-2 animate-pulse text-lg">Carregando…</div>` : d.cambio
+          ? html`<div className="mt-1 text-5xl font-extrabold">${brl(d.cambio.eur)}</div><div className="text-sm text-slate-300">${seta(d.cambio.pe)} no dia</div>`
+          : html`<div className="mt-2 text-lg text-slate-400">Indisponível no momento</div>`}
+      </div>
+    </div>
+    <p className="text-xs text-slate-500">Informação para você · Previsão: Open-Meteo · Câmbio: AwesomeAPI</p>
+  </div>`;
+}
+
 function Galeria({ onPick, onClose }) {
   const [lista, setLista] = useState(null);
   const [erro, setErro] = useState("");
@@ -323,6 +413,12 @@ function AdminPanel({ onClose }) {
   const [sps, setSps] = useState(String(g.sponsorSec || 8));
   const [galS, setGalS] = useState(-1);
   const [spm, setSpm] = useState(null);
+  const [limpaLoja, setLimpaLoja] = useState(true);
+  const [io, setIo] = useState(g.infoOn !== false);
+  const [is, setIs] = useState(String(g.infoSec || 20));
+  const [il, setIl] = useState(g.infoLocal || "");
+  const [ig, setIg] = useState(g.infoGeo !== false);
+  const [im, setIm] = useState(null);
   const setSpI = (i, patch) => setSp((a) => a.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const [qr, setQr] = useState(g.pixQr || "");
   const [galQ, setGalQ] = useState(false);
@@ -456,6 +552,19 @@ function AdminPanel({ onClose }) {
     </section>
 
     <section className="mb-5">
+      <${H}>Tela de utilidade pública (hora, clima e câmbio)<//>
+      <p className="mb-2 text-xs text-slate-400">Entra antes dos banners dos patrocinadores e mostra a hora, a previsão do tempo e a cotação do dólar e do euro. Usa a localização do aparelho e, se não conseguir, o local abaixo.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button type="button" onClick=${() => setIo(!io)} className=${btn + (io ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-700 hover:bg-red-600")}>Tela: ${io ? "LIGADA" : "DESLIGADA"}</button>
+        <input className=${inp} inputMode="numeric" maxLength="3" placeholder="Segundos na tela (ex: 20)" value=${is} onChange=${(e) => setIs(e.target.value.replace(/\D/g, ""))} />
+        <input className=${inp} placeholder="Local da previsão (ex: Sao Mateus ES ou -18.72,-39.86)" value=${il} onChange=${(e) => setIl(e.target.value)} />
+        <button type="button" onClick=${() => setIg(!ig)} className=${btn + (ig ? "bg-emerald-600 hover:bg-emerald-500" : "bg-slate-700 hover:bg-slate-600")}>Usar localização do aparelho: ${ig ? "SIM" : "NÃO"}</button>
+        <button type="button" onClick=${() => { actions.saveInfo(io, is, il, ig); setIm({ ok: true, t: "Tela de utilidade pública salva." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Salvar</button>
+      </div>
+      <${Note} m=${im} />
+    </section>
+
+    <section className="mb-5">
       <${H}>PIX (pagamento)<//>
       <button type="button" onClick=${() => actions.setFlag("confirmBtn", g.confirmBtn === false)} className=${btn + "mb-2 " + (g.confirmBtn === false ? "bg-red-700 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-500")}>Botões de confirmar cobrança manual: ${g.confirmBtn === false ? "DESABILITADO" : "HABILITADO"}</button>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -533,10 +642,11 @@ function AdminPanel({ onClose }) {
       ${!confirm
         ? html`<button type="button" onClick=${() => setConfirm(true)} className=${btn + "bg-red-600 hover:bg-red-500"}>🔄 Reiniciar Jogo</button>`
         : html`<div className="rounded-lg border border-red-600 bg-red-950/60 p-3">
-            <p className="mb-3 text-sm font-semibold">Tem certeza? Todos os furos serão limpos. Prêmios e configurações são mantidos.</p>
+            <p className="mb-3 text-sm font-semibold">Tem certeza? Todos os furos serão limpos. Prêmios e configurações são mantidos, e as cobranças a receber do atendente também.</p>
+            <button type="button" onClick=${() => setLimpaLoja(!limpaLoja)} className=${btn + "mb-3 " + (limpaLoja ? "bg-emerald-700 hover:bg-emerald-600" : "bg-slate-700 hover:bg-slate-600")}>Limpar também os recebimentos do PIX da loja do registro: ${limpaLoja ? "SIM" : "NÃO"}</button>
             <div className="flex gap-2">
               <button type="button" onClick=${() => setConfirm(false)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Cancelar</button>
-              <button type="button" onClick=${() => { actions.reset(); setConfirm(false); }} className=${btn + "bg-red-600 hover:bg-red-500"}>Sim, reiniciar</button>
+              <button type="button" onClick=${() => { actions.reset(limpaLoja); setConfirm(false); }} className=${btn + "bg-red-600 hover:bg-red-500"}>Sim, reiniciar</button>
             </div>
           </div>`}
     </section>
@@ -671,6 +781,7 @@ function App() {
   if (bannerOn) jogoSlides.push({ tipo: "banner" });
   disp.forEach((p) => jogoSlides.push({ tipo: "premio", p }));
   const patroSlides = [];
+  if (g.infoOn !== false) patroSlides.push({ tipo: "info" });
   (g.sponsors || []).forEach((x, i) => { if (x.on !== false && x.img) patroSlides.push({ tipo: "patro", img: x.img, n: i + 1 }); });
   const slides = !sv ? [] : sv.modo === "inicio" ? (bannerOn ? [{ tipo: "banner" }] : []) : sv.modo === "patro" ? patroSlides : jogoSlides;
   const cur2 = slides.length ? slides[svIdx % slides.length] : null;
@@ -678,14 +789,14 @@ function App() {
   useEffect(() => {
     if (!sv) return;
     if (!cur2) { if (sv.modo === "patro") lastSp.current = Date.now(); setSv(null); return; }
-    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : cur2.tipo === "patro" ? Math.max(1, g.sponsorSec || 8) : CONFIG.premioSeg) * 1000;
+    const ms = (cur2.tipo === "banner" ? Math.max(1, g.bannerSec || 8) : cur2.tipo === "patro" ? Math.max(1, g.sponsorSec || 8) : cur2.tipo === "info" ? Math.max(5, g.infoSec || 20) : CONFIG.premioSeg) * 1000;
     const t = setTimeout(() => {
       if (sv.modo === "inicio") setSv(null);
       else if (sv.modo === "patro") { if (svIdx + 1 >= slides.length) { lastSp.current = Date.now(); setSv(null); } else setSvIdx(svIdx + 1); }
       else setSvIdx((i) => (i + 1) % Math.max(1, slides.length));
     }, ms);
     return () => clearTimeout(t);
-  }, [sv, svIdx, slides.length, g.bannerSec, g.sponsorSec, bannerOn]);
+  }, [sv, svIdx, slides.length, g.bannerSec, g.sponsorSec, g.infoSec, bannerOn]);
   useEffect(() => {
     if (janela) return;
     const intervalo = CONFIG.patrocinioMin * 60000;
@@ -868,9 +979,9 @@ function App() {
         <div className="mt-5 flex flex-wrap gap-2">
           <button type="button" onClick=${closePay} className="rounded-xl bg-slate-600 px-5 py-3 font-bold hover:bg-slate-500">${(g.pend || 0) > 0 ? "Cancelar" : "Fechar"}</button>
           ${(g.pend || 0) > 0 && g.confirmBtn !== false && (!g.apiUrl || cobManual) && html`<div className="flex min-w-0 flex-1 flex-wrap gap-2">
-            <button type="button" onClick=${() => { actions.confirmPay("dinheiro"); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 px-3 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Recebi em dinheiro</button>
-            <button type="button" onClick=${() => { actions.confirmPay("pix_atendente"); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 px-3 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Recebi no PIX do atendente</button>
-            <button type="button" onClick=${() => { actions.confirmPay("pix_loja"); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 px-3 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Recebi no PIX da loja</button>
+            <button type="button" tabIndex="-1" data-nodpad="1" onClick=${(e) => { if (e.detail === 0) return; actions.confirmPay("dinheiro"); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 px-3 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Recebi em dinheiro</button>
+            <button type="button" tabIndex="-1" data-nodpad="1" onClick=${(e) => { if (e.detail === 0) return; actions.confirmPay("pix_atendente"); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 px-3 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Recebi no PIX do atendente</button>
+            <button type="button" tabIndex="-1" data-nodpad="1" onClick=${(e) => { if (e.detail === 0) return; actions.confirmPay("pix_loja"); closePay(); }} className="flex-1 rounded-xl bg-emerald-500 px-3 py-3 font-bold text-slate-900 hover:bg-emerald-400">✅ Recebi no PIX da loja</button>
           </div>`}
           ${g.apiUrl && !cobManual && !erroCob && !falhaCob && html`<button type="button" tabIndex="-1" data-nodpad="1" aria-label="Cobrar manualmente (atendente)" title="Cobrar manualmente (atendente)" onClick=${(e) => { if (e.detail === 0) return; setCobManual(true); }} className="ml-auto rounded-md border border-slate-700 px-2 py-1 text-[10px] text-slate-500 opacity-40 hover:opacity-100">atendente</button>`}
         </div>
@@ -912,6 +1023,8 @@ function App() {
               <p className="shrink-0 py-2 text-center text-2xl font-extrabold text-amber-300 sm:text-4xl">VISITE NOSSO ANUNCIANTE</p>
               <div className="relative min-h-0 flex-1"><img src=${resolveImg(cur2.img)} alt=${"Patrocinador " + cur2.n} className="absolute inset-0 h-full w-full object-contain" /></div>
             </div>`
+          : cur2.tipo === "info"
+          ? html`<${InfoTela} g=${g} />`
           : html`<p className="mb-2 text-xl font-extrabold text-emerald-300 sm:text-3xl">CLIQUE EM JOGAR, ESCOLHA SEU NÚMERO, CONCORRA E GANHE</p>
             <h2 className="mb-3 text-2xl font-extrabold text-amber-300 sm:text-4xl">🎁 Prêmios em jogo</h2>
             <${PrizeImage} key=${cur2.p.img} src=${cur2.p.img} className="h-[36vh] w-[36vh] rounded-3xl text-8xl" />
