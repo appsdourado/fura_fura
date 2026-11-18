@@ -29,6 +29,7 @@
   .ff-bar { animation: ffBar 10s linear forwards; }
   body.modal-open main * { animation: none !important; transition: none !important; }
   main button { scroll-margin-top: 230px; scroll-margin-bottom: 30px; }
+  .vk, .vk * { text-transform: none !important; }
   button:disabled { opacity: .35; cursor: not-allowed; }
   button:disabled.aspect-square { transform: none !important; }
   body { background: #0f172a; color: #f1f5f9; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -42,7 +43,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-17 (senha com teclado na tela)";
+const VERSAO = "2026-11-18 (teclado na tela)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -56,9 +57,9 @@ const CONFIG = {
   premioSeg: 5, // segundos que cada prêmio fica na rotação (janela de prêmios e proteção de tela)
   protecaoSeg: 30, // segundos sem jogar para a proteção de tela entrar (60 = 1 minuto)
   patrocinadores: ["", "", "", ""], // banners dos 4 patrocinadores: nomes dos arquivos na pasta premios. Ex: ["loja1.jpg", "", "", ""]
-  patrocinioSeg: 15, // segundos que cada banner de patrocinador fica na tela
+  patrocinioSeg: 10, // segundos que cada banner de patrocinador fica na tela
   patrocinioMin: 5, // a cada quantos minutos, com o jogo parado, a proteção de tela dos patrocinadores entra
-  infoSeg: 30, // segundos da tela de hora, clima e câmbio, que entra antes dos patrocinadores
+  infoSeg: 20, // segundos da tela de hora, clima e câmbio, que entra antes dos patrocinadores
   infoLocal: "Sao Mateus ES", // local da previsão do tempo quando o aparelho não informa a localização. Ex: "Vitoria ES" ou "-18.72,-39.86"
   senhaAtendente: "11411", // senha padrão do atendente para confirmar recebimentos manuais (só números)
 };
@@ -67,7 +68,7 @@ const SERIAL = "FF-0001", KEY = `fura-fura:${SERIAL}:v1`, TOTAL = 1000, DEF_PASS
 const resolveImg = (v) => { v = (v || "").trim(); if (!v || /^(https?:|data:|\/|premios\/)/i.test(v)) return v; return "premios/" + v; };
 const NUMS = [37, 112, 205, 288, 351, 429, 516, 603, 744, 891];
 const seed = () => { const p = {}; NUMS.forEach((n, i) => { const k = String(i + 1).padStart(2, "0"); p[n] = { name: "Prêmio " + k, img: "premios/premio-" + k + ".png" }; }); return p; };
-const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, sponsors: [0, 1, 2, 3].map((i) => ({ img: CONFIG.patrocinadores[i] || "", on: true })), sponsorSec: CONFIG.patrocinioSeg, manual: 0, sponsorBtn: true, confirmBtn: true, manuals: [], infoOn: true, infoSec: CONFIG.infoSeg, infoLocal: CONFIG.infoLocal, infoGeo: true, attPass: CONFIG.senhaAtendente, apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
+const init = () => ({ store: "Minha Loja", price: 5, passHash: "", prizes: seed(), holes: {}, current: 0, seeded: true, pixKey: CONFIG.pixKey, pixQr: "", paid: 0, pend: 0, pendSince: 0, pixCity: CONFIG.pixCity, pixDesc: "", banner: CONFIG.banner, bannerSec: CONFIG.bannerSeg, bannerOn: true, sponsors: [0, 1, 2, 3].map((i) => ({ img: CONFIG.patrocinadores[i] || "", on: true })), sponsorSec: CONFIG.patrocinioSeg, manual: 0, sponsorBtn: true, confirmBtn: true, manuals: [], infoOn: true, infoSec: CONFIG.infoSeg, infoLocal: CONFIG.infoLocal, infoGeo: true, attPass: CONFIG.senhaAtendente, teclado: false, apiUrl: CONFIG.apiUrl.replace(/\/+$/, ""), charges: [], usadas: [] });
 const parse = (r) => { try { if (r) { const d = JSON.parse(r); const s = { ...init(), ...d };
       for (const k of ["apiUrl", "pixKey", "pixCity", "banner"]) if (!s[k]) s[k] = CONFIG[k]; // aparelho sem valor salvo usa o padrão
       if (!s.bannerSec) s.bannerSec = CONFIG.bannerSeg;
@@ -146,7 +147,7 @@ const actions = {
   zeroCredits() { update((s) => ({ ...s, paid: 0, pend: 0, pendSince: 0 })); },
   saveBanner(on, img, sec) { update((s) => ({ ...s, bannerOn: !!on, banner: resolveImg(img), bannerSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
   saveSponsors(list, sec) { update((s) => ({ ...s, sponsors: list.slice(0, 4).map((x) => ({ img: resolveImg(x.img), on: !!x.on })), sponsorSec: Math.min(120, Math.max(1, parseInt(sec, 10) || 8)) })); },
-  setFlag(k, v) { if (["sponsorBtn", "confirmBtn"].includes(k)) update((s) => ({ ...s, [k]: !!v })); },
+  setFlag(k, v) { if (["sponsorBtn", "confirmBtn", "teclado"].includes(k)) update((s) => ({ ...s, [k]: !!v })); },
   saveInfo(on, sec, local, geo) { update((s) => ({ ...s, infoOn: !!on, infoSec: Math.min(120, Math.max(5, parseInt(sec, 10) || 20)), infoLocal: (local || "").trim(), infoGeo: !!geo })); },
   saveAttPass(p) { update((s) => ({ ...s, attPass: String(p).replace(/\D/g, "").slice(0, 12) || CONFIG.senhaAtendente })); },
   saveApi(url) { update((s) => ({ ...s, apiUrl: (url || "").trim().replace(/\/+$/, "") })); },
@@ -362,6 +363,44 @@ function Restante({ since }) {
   return Math.floor(ms / 60000) + ":" + String(Math.floor((ms % 60000) / 1000)).padStart(2, "0");
 }
 
+/* ===== teclado na tela (para TV box em que o teclado do Android não abre) ===== */
+const LINHAS_TECLADO = [["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"], ["a", "s", "d", "f", "g", "h", "j", "k", "l"], ["z", "x", "c", "v", "b", "n", "m"], ["@", ".", "_", "-", "/", ":", ",", "+", "?", "&", "=", "#", "%"]];
+function escreverNoCampo(el, v) {
+  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  set.call(el, v);
+  el.dispatchEvent(new Event("input", { bubbles: true })); // avisa o React, que atualiza o campo
+  return v;
+}
+function TecladoTela({ el, onFechar }) {
+  const [val, setVal] = useState(el.value);
+  const [mai, setMai] = useState(false);
+  const max = el.maxLength > 0 ? el.maxLength : 300;
+  const aplicar = (v) => setVal(escreverNoCampo(el, v.slice(0, max)));
+  const tecla = (c) => aplicar(el.value + (mai ? c.toUpperCase() : c));
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack" || e.keyCode === 4) { e.preventDefault(); onFechar(); } };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  useEffect(() => () => { try { el.focus({ preventScroll: true }); } catch (e) {} }, []);
+  const ctl = "rounded-lg py-3 text-base font-bold ";
+  return html`<div role="dialog" aria-modal="true" aria-label="Teclado na tela" className="vk fixed inset-x-0 bottom-0 z-[90] border-t border-slate-600 bg-slate-900 p-2 shadow-2xl">
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-2 min-h-[2.75rem] break-all rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-lg text-white">${val ? (el.type === "password" ? "•".repeat(val.length) : val) : html`<span className="text-slate-500">${el.placeholder || "Digite"}</span>`}</div>
+      ${LINHAS_TECLADO.map((l, i) => html`<div key=${i} className="mb-1 flex justify-center gap-1">
+        ${l.map((c) => html`<button key=${c} type="button" autoFocus=${i === 0 && c === "1"} onClick=${() => tecla(c)} className="min-w-0 flex-1 rounded-lg bg-slate-700 py-3 text-lg font-bold hover:bg-slate-600">${mai ? c.toUpperCase() : c}</button>`)}
+      </div>`)}
+      <div className="flex gap-1">
+        <button type="button" onClick=${() => setMai(!mai)} className=${"flex-1 " + ctl + (mai ? "bg-amber-500 text-slate-900" : "bg-slate-600 hover:bg-slate-500")}>⇧ ${mai ? "ABC" : "abc"}</button>
+        <button type="button" onClick=${() => tecla(" ")} className=${"flex-[3] bg-slate-700 hover:bg-slate-600 " + ctl}>Espaço</button>
+        <button type="button" onClick=${() => aplicar(el.value.slice(0, -1))} aria-label="Apagar" className=${"flex-1 bg-slate-600 hover:bg-slate-500 " + ctl}>⌫</button>
+        <button type="button" onClick=${() => aplicar("")} className=${"flex-1 bg-slate-600 hover:bg-slate-500 " + ctl}>Limpar</button>
+        <button type="button" onClick=${onFechar} className=${"flex-1 bg-emerald-500 text-slate-900 hover:bg-emerald-400 " + ctl}>✔ OK</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function Galeria({ onPick, onClose }) {
   const [lista, setLista] = useState(null);
   const [erro, setErro] = useState("");
@@ -445,6 +484,8 @@ function AdminPanel({ onClose }) {
     <p className="mb-3 text-sm text-slate-400">Digite a senha para continuar.</p>
     <input type="password" autoFocus className=${inp} placeholder="Senha" value=${pw} onChange=${(e) => setPw(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && entrar()} />
     ${lerr && html`<p className="mt-2 text-sm font-semibold text-red-400">⚠️ ${lerr}</p>`}
+    <button type="button" onClick=${() => actions.setFlag("teclado", !g.teclado)} className=${btn + "mt-3 w-full " + (g.teclado ? "bg-emerald-700 hover:bg-emerald-600" : "bg-slate-700 hover:bg-slate-600")}>⌨ Teclado na tela: ${g.teclado ? "LIGADO" : "DESLIGADO"}</button>
+    ${g.teclado && html`<p className="mt-2 text-xs text-slate-400">Selecione o campo e aperte OK para abrir o teclado na tela.</p>`}
     <div className="mt-4 flex gap-2">
       <button type="button" onClick=${onClose} className=${btn + "flex-1 bg-slate-700 hover:bg-slate-600"}>Cancelar</button>
       <button type="button" onClick=${entrar} className=${btn + "flex-1 bg-blue-600 hover:bg-blue-500"}>Entrar</button>
@@ -611,6 +652,7 @@ function AdminPanel({ onClose }) {
         <button type="button" onClick=${() => { if (ap.length < 4) return setApm({ ok: false, t: "Use pelo menos 4 números." }); actions.saveAttPass(ap); setAp(""); setApm({ ok: true, t: "Senha do atendente alterada." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Alterar</button>
       </div>
       <${Note} m=${apm} />
+      <button type="button" onClick=${() => actions.setFlag("teclado", !g.teclado)} className=${btn + "mt-3 " + (g.teclado ? "bg-emerald-700 hover:bg-emerald-600" : "bg-slate-700 hover:bg-slate-600")}>⌨ Teclado na tela deste aparelho: ${g.teclado ? "LIGADO" : "DESLIGADO"}</button>
     </section>
 
     <section className="mb-5">
@@ -729,6 +771,39 @@ function App() {
   useDpad();
   const [view, setView] = useState(null);
   const [novo, setNovo] = useState(false);
+  const [vk, setVk] = useState(null); // campo que está sendo digitado no teclado da tela
+  // teclado na tela (aparelhos em que o teclado do Android não abre): campos viram "somente leitura" e OK/clique abre o teclado do jogo
+  useEffect(() => {
+    if (!g.teclado) return;
+    const fora = ["checkbox", "radio", "file", "button", "submit", "hidden"];
+    const marcar = () => document.querySelectorAll("input:not([data-vk])").forEach((el) => {
+      if (fora.includes(el.type)) return;
+      el.setAttribute("data-vk", el.getAttribute("inputmode") || "-");
+      el.setAttribute("inputmode", "none");
+      el.readOnly = true;
+    });
+    marcar();
+    const mo = new MutationObserver(marcar);
+    mo.observe(document.body, { childList: true, subtree: true });
+    const abrir = (e) => { const el = e.target; if (el && el.tagName === "INPUT" && el.hasAttribute("data-vk")) setVk(el); };
+    const tecla = (e) => {
+      if (e.key !== "Enter") return;
+      const el = document.activeElement;
+      if (el && el.tagName === "INPUT" && el.hasAttribute("data-vk")) { e.preventDefault(); e.stopPropagation(); setVk(el); }
+    };
+    document.addEventListener("click", abrir, true);
+    document.addEventListener("keydown", tecla, true);
+    return () => {
+      mo.disconnect();
+      document.removeEventListener("click", abrir, true);
+      document.removeEventListener("keydown", tecla, true);
+      document.querySelectorAll("input[data-vk]").forEach((el) => {
+        const o = el.getAttribute("data-vk");
+        if (o === "-") el.removeAttribute("inputmode"); else el.setAttribute("inputmode", o);
+        el.readOnly = false; el.removeAttribute("data-vk");
+      });
+    };
+  }, [g.teclado]);
   const [list, setList] = useState(false);
   const [admin, setAdmin] = useState(false);
   const pick = useCallback((n) => { const novo0 = !snap().holes[n]; if (actions.furar(n)) { setNovo(novo0); setView(n); } }, []);
@@ -1076,6 +1151,8 @@ function App() {
     <//>`}
 
     ${admin && html`<${AdminPanel} onClose=${closeAdmin} />`}
+
+    ${vk && html`<${TecladoTela} el=${vk} onFechar=${() => setVk(null)} />`}
 
     ${sv && cur2 && html`<div role="dialog" aria-modal="true" aria-label="Proteção de tela" className="fixed inset-0 z-[80] flex flex-col bg-slate-950">
       <div key=${svIdx + sv.modo} className="ff-in relative flex min-h-0 flex-1 flex-col items-center justify-center p-3 text-center">
