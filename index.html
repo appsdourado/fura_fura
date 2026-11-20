@@ -43,7 +43,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-18 (teclado do controle e asteriscos)";
+const VERSAO = "2026-11-19 (senha do atendente oculta)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -481,6 +481,8 @@ function AdminPanel({ onClose }) {
   const [im, setIm] = useState(null);
   const [ap, setAp] = useState("");
   const [apm, setApm] = useState(null);
+  const [verAp, setVerAp] = useState(false); // mostrar a senha atual do atendente (volta a ocultar sozinho)
+  useEffect(() => { if (!verAp) return; const t = setTimeout(() => setVerAp(false), 10000); return () => clearTimeout(t); }, [verAp]);
   const setSpI = (i, patch) => setSp((a) => a.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const [qr, setQr] = useState(g.pixQr || "");
   const [galQ, setGalQ] = useState(false);
@@ -657,7 +659,12 @@ function AdminPanel({ onClose }) {
 
     <section className="mb-5">
       <${H}>Senha do atendente (confirma recebimentos manuais)<//>
-      <p className="mb-2 text-xs text-slate-400">Pedida quando o atendente escolhe como recebeu uma cobrança manual. Só números. Senha atual: <b className="text-base text-amber-300">${g.attPass || "11411"}</b></p>
+      <p className="mb-2 text-xs text-slate-400">Pedida quando o atendente escolhe como recebeu uma cobrança manual. Só números.</p>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-slate-300">Senha atual:</span>
+        <b className="min-w-[6rem] text-lg tracking-widest text-amber-300">${verAp ? (g.attPass || "11411") : "*".repeat(String(g.attPass || "11411").length)}</b>
+        <button type="button" onClick=${() => setVerAp(!verAp)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>${verAp ? "🙈 Ocultar" : "👁 Mostrar"}</button>
+      </div>
       <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
         <input type="password" className=${inp} inputMode="numeric" maxLength="12" placeholder="Nova senha do atendente (4 a 12 números)" value=${ap} onChange=${(e) => setAp(e.target.value.replace(/\D/g, ""))} />
         <button type="button" onClick=${() => { if (ap.length < 4) return setApm({ ok: false, t: "Use pelo menos 4 números." }); actions.saveAttPass(ap); setAp(""); setApm({ ok: true, t: "Senha do atendente alterada." }); }} className=${btn + "bg-blue-600 hover:bg-blue-500"}>Alterar</button>
@@ -878,6 +885,25 @@ function App() {
   useEffect(() => {
     if (senhaFor && senhaIn && senhaIn.length >= String(g.attPass || CONFIG.senhaAtendente).length) confirmarSenha();
   }, [senhaIn]);
+  // botão direito do mouse desligado; atalhos: W abre o painel do administrador, 5 aciona o botão do atendente (cobrança manual) na janela de pagamento
+  const atalhos = useRef({});
+  atalhos.current = { admin, vk, senhaFor, sv, pay, pend: g.pend || 0, outro: !!(list || view !== null || detail) };
+  useEffect(() => {
+    const bloquear = (e) => e.preventDefault();
+    const tecla = (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+      const t = e.target, tag = t && t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (t && t.isContentEditable)) return;
+      const a = atalhos.current;
+      if (a.vk || a.senhaFor || a.sv || a.outro) return;
+      const k = (e.key || "").toLowerCase();
+      if (k === "w" && !a.admin && !a.pay) { e.preventDefault(); setAdmin(true); }
+      else if (k === "5" && a.pay && !a.admin) { e.preventDefault(); setCobManual(true); }
+    };
+    document.addEventListener("contextmenu", bloquear);
+    window.addEventListener("keydown", tecla);
+    return () => { document.removeEventListener("contextmenu", bloquear); window.removeEventListener("keydown", tecla); };
+  }, []);
   const confirmarSenha = () => {
     if (senhaIn === String(g.attPass || CONFIG.senhaAtendente)) { actions.confirmPay(senhaFor); setSenhaFor(null); closePay(); }
     else { setSenhaErr(true); setSenhaIn(""); }
@@ -894,7 +920,7 @@ function App() {
   }, [pay, falhaId]);
   useEffect(() => { if (pay && pendN === 0) setPay(false); }, [pay, pendN]); // tempo esgotado ou pagamento feito: volta direto para a cartela
   useEffect(() => {
-    if (!pay || !g.apiUrl || pendN === 0 || cobr || criando || erroCob) return;
+    if (!pay || !g.apiUrl || pendN === 0 || cobr || criando || erroCob || cobManual) return;
     setCriando(true);
     fetch(g.apiUrl + "/cobrar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valor: valorPend, creditos: pendN, pdv: g.pixDesc || "", loja: g.store }) })
       .then((r) => r.json().then((j) => { if (!r.ok || !j.qr_code) throw new Error(j.erro || "erro " + r.status); return j; }))
