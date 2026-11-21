@@ -43,7 +43,7 @@ const { useState, useEffect, useRef, useCallback, memo, useSyncExternalStore } =
 const html = htm.bind(React.createElement);
 
 /* ===== STORE (equivale a lib/game-store.ts) ===== */
-const VERSAO = "2026-11-19 (senha do atendente oculta)";
+const VERSAO = "2026-11-19 (foco no Cancelar)";
 
 /* ===== CONFIGURAÇÃO DO SEU NEGÓCIO =====
    Preencha uma vez aqui: vale para todos os pontos de venda, sem digitar em cada aparelho.
@@ -489,6 +489,12 @@ function AdminPanel({ onClose }) {
   const [pxm, setPxm] = useState(null);
   const [prm, setPrm] = useState(null);
   const [confirm, setConfirm] = useState(false);
+  // ao pedir a confirmação do reinício, o cursor vai para "Cancelar"; ao sair dela, volta para "Reiniciar Jogo"
+  const cancelRef = useRef(null), reiniRef = useRef(null), eraConfirm = useRef(false);
+  useEffect(() => {
+    if (confirm) { eraConfirm.current = true; if (cancelRef.current) cancelRef.current.focus(); }
+    else if (eraConfirm.current) { eraConfirm.current = false; if (reiniRef.current) reiniRef.current.focus(); }
+  }, [confirm]);
 
   const entrar = async () => { if (await actions.checkPass(pw)) { setAuth(true); setLerr(""); } else setLerr("Senha incorreta"); };
 
@@ -722,12 +728,12 @@ function AdminPanel({ onClose }) {
 
     <section className="border-t border-slate-700 pt-4">
       ${!confirm
-        ? html`<button type="button" onClick=${() => setConfirm(true)} className=${btn + "bg-red-600 hover:bg-red-500"}>🔄 Reiniciar Jogo</button>`
+        ? html`<button type="button" ref=${reiniRef} onClick=${() => setConfirm(true)} className=${btn + "bg-red-600 hover:bg-red-500"}>🔄 Reiniciar Jogo</button>`
         : html`<div className="rounded-lg border border-red-600 bg-red-950/60 p-3">
             <p className="mb-3 text-sm font-semibold">Tem certeza? Todos os furos serão limpos. Prêmios e configurações são mantidos, e as cobranças a receber do atendente também.</p>
             <button type="button" onClick=${() => setLimpaLoja(!limpaLoja)} className=${btn + "mb-3 " + (limpaLoja ? "bg-emerald-700 hover:bg-emerald-600" : "bg-slate-700 hover:bg-slate-600")}>Limpar também os recebimentos do PIX da loja do registro: ${limpaLoja ? "SIM" : "NÃO"}</button>
             <div className="flex gap-2">
-              <button type="button" onClick=${() => setConfirm(false)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Cancelar</button>
+              <button type="button" ref=${cancelRef} onClick=${() => setConfirm(false)} className=${btn + "bg-slate-700 hover:bg-slate-600"}>Cancelar</button>
               <button type="button" onClick=${() => { actions.reset(limpaLoja); setConfirm(false); }} className=${btn + "bg-red-600 hover:bg-red-500"}>Sim, reiniciar</button>
             </div>
           </div>`}
